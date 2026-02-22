@@ -36,7 +36,7 @@
     position: fixed;
     pointer-events: none;
     z-index: 1000;
-    width: 24px;
+    width: 16px;
     height: 24px;
     transition: none;
   }
@@ -105,8 +105,8 @@
 <canvas id="main-canvas"></canvas>
 
 <div id="custom-cursor">
-  <svg id="cursor-arrow" width="24" height="24" viewBox="0 0 24 24">
-    <polygon points="2,2 2,18 7,14 12,20 15,18 10,12 16,10"
+  <svg id="cursor-arrow" width="16" height="24" viewBox="0 0 16 24">
+    <polygon points="1,1 1,19 5.5,15 9,22 12,20.5 8,14 14,12"
              fill="white" stroke="#333" stroke-width="1.2"/>
   </svg>
 </div>
@@ -115,13 +115,13 @@
   <h3>Parameters</h3>
   <label>
     Gain (C/D ratio)
-    <input type="range" id="gain-slider" min="0" max="3" step="0.1" value="1.2">
-    <span class="val" id="gain-val">1.2</span>
+    <input type="range" id="gain-slider" min="0" max="10" step="0.1" value="7.5">
+    <span class="val" id="gain-val">7.5</span>
   </label>
   <label>
-    Steam intensity
-    <input type="range" id="steam-slider" min="0.2" max="2" step="0.1" value="1.0">
-    <span class="val" id="steam-val">1.0</span>
+    Flow sensitivity
+    <input type="range" id="steam-slider" min="0.2" max="2" step="0.1" value="1.5">
+    <span class="val" id="steam-val">1.5</span>
   </label>
   <div class="toggle-row">
     <input type="checkbox" id="toggle-effect" checked>
@@ -197,12 +197,12 @@ window.addEventListener('resize', resize);
 // ============================================================
 // OPTICAL FLOW - block matching on GIF frames
 // ============================================================
-const FLOW_BLOCK = 8;
-const FLOW_SEARCH = 4;
+const FLOW_BLOCK = 4;
+const FLOW_SEARCH = 6;
 const FLOW_INTERVAL = 80;
-const FLOW_SMOOTH = 0.5;
+const FLOW_SMOOTH = 0.4;
 const FLOW_VEL_SCALE = 0.15;
-const FLOW_THRESHOLD = 0.3;
+const FLOW_THRESHOLD = 0.05;
 
 const flowCanvas = document.createElement('canvas');
 const flowCtx = flowCanvas.getContext('2d', { willReadFrequently: true });
@@ -213,7 +213,7 @@ let flowCols = 0, flowRows = 0;
 let flowAvailable = false;
 let lastFlowTime = 0;
 let showFlowVis = false;
-let steamIntensity = 1.0;
+let steamIntensity = 1.5;
 
 function toGrayscale(imgData) {
   const d = imgData.data;
@@ -294,32 +294,99 @@ function computeFlow(prev, curr) {
   flowRows = rows;
 }
 
+// ============================================================
+// GIF FRAME DECODER (ImageDecoder API)
+// ============================================================
+let gifFrames = [];      // array of ImageBitmap
+let gifFrameDurations = []; // ms per frame
+let gifFrameIndex = 0;
+let gifTotalDuration = 0;
+let gifPlayTime = 0;
+let gifDecoded = false;
+
+async function decodeGifFrames() {
+  const statusEl = document.getElementById('flow-status');
+  try {
+    statusEl.textContent = 'Flow: decoding GIF frames...';
+    const resp = await fetch(gifEl.src);
+    const decoder = new ImageDecoder({
+      type: 'image/gif',
+      data: resp.body,
+    });
+    await decoder.completed;
+
+    const frameCount = decoder.tracks.selectedTrack.frameCount;
+    // Composite canvas for proper GIF frame disposal
+    const compCanvas = document.createElement('canvas');
+    compCanvas.width = GIF_NAT_W;
+    compCanvas.height = GIF_NAT_H;
+    const compCtx = compCanvas.getContext('2d');
+
+    for (let i = 0; i < frameCount; i++) {
+      const result = await decoder.decode({ frameIndex: i });
+      const vf = result.image;
+      compCtx.drawImage(vf, 0, 0);
+      const bitmap = await createImageBitmap(compCanvas);
+      const dur = Math.max((vf.duration || 80000) / 1000, 20);
+      gifFrames.push(bitmap);
+      gifFrameDurations.push(dur);
+      gifTotalDuration += dur;
+      vf.close();
+    }
+
+    gifDecoded = true;
+    gifEl.style.display = 'none';
+    statusEl.textContent = 'Flow: decoded ' + gifFrames.length + ' frames';
+    decoder.close();
+  } catch (e) {
+    statusEl.textContent = 'Flow: decode error - ' + e.message;
+  }
+}
+
+function getCurrentGifFrame(dt) {
+  if (!gifDecoded || gifFrames.length === 0) return null;
+  gifPlayTime += dt * 1000;
+  if (gifPlayTime >= gifTotalDuration) gifPlayTime -= gifTotalDuration;
+
+  let acc = 0;
+  for (let i = 0; i < gifFrames.length; i++) {
+    acc += gifFrameDurations[i];
+    if (gifPlayTime < acc) { gifFrameIndex = i; break; }
+  }
+  return gifFrames[gifFrameIndex];
+}
+
+let flowDebugCount = 0;
 function captureAndComputeFlow(timestamp) {
-  if (!gifEl.complete || gifEl.naturalWidth === 0) return;
+  const statusEl = document.getElementById('flow-status');
+  if (!gifDecoded) return;
   if (timestamp - lastFlowTime < FLOW_INTERVAL) return;
   lastFlowTime = timestamp;
 
+  const frame = gifFrames[gifFrameIndex];
+  if (!frame) return;
+
   flowCanvas.width = GIF_NAT_W;
   flowCanvas.height = GIF_NAT_H;
+  flowCtx.drawImage(frame, 0, 0, GIF_NAT_W, GIF_NAT_H);
+  const imgData = flowCtx.getImageData(0, 0, GIF_NAT_W, GIF_NAT_H);
+  const gray = toGrayscale(imgData);
+  const half = downsample2x(gray);
 
-  try {
-    flowCtx.drawImage(gifEl, 0, 0, GIF_NAT_W, GIF_NAT_H);
-    const imgData = flowCtx.getImageData(0, 0, GIF_NAT_W, GIF_NAT_H);
-    const gray = toGrayscale(imgData);
-    const half = downsample2x(gray);
-
-    if (prevGray) {
-      computeFlow(prevGray, half);
-      flowAvailable = true;
-    }
-    prevGray = half;
-
-    document.getElementById('flow-status').textContent =
-      'Flow: ' + flowCols + 'x' + flowRows + ' blocks';
-  } catch (e) {
-    document.getElementById('flow-status').textContent =
-      'Flow: error - ' + e.message;
+  flowDebugCount++;
+  if (prevGray) {
+    computeFlow(prevGray, half);
+    flowAvailable = true;
+    let nonZero = 0;
+    for (let r = 0; r < flowRows; r++)
+      for (let c = 0; c < flowCols; c++) {
+        const m = Math.sqrt(flowField[r][c].vx**2 + flowField[r][c].vy**2);
+        if (m >= FLOW_THRESHOLD) nonZero++;
+      }
+    statusEl.textContent =
+      'Flow: ' + flowCols + 'x' + flowRows + ' | active=' + nonZero + ' | f=' + gifFrameIndex + '/' + gifFrames.length;
   }
+  prevGray = half;
 }
 
 // ============================================================
@@ -361,28 +428,53 @@ function getSteamVelocityAt(sx, sy) {
   const mag = Math.sqrt(fullVx * fullVx + fullVy * fullVy);
   if (mag < FLOW_THRESHOLD) return { vx: 0, vy: 0, inZone: false };
 
-  const scale = gifRect.scale * FLOW_VEL_SCALE * steamIntensity;
+  const scale = gifRect.scale * FLOW_VEL_SCALE;
   return { vx: fullVx * scale, vy: fullVy * scale, inZone: true };
 }
 
 // ============================================================
 // FLOW FIELD VISUALIZATION
 // ============================================================
+function sampleFlowAt(fx, fy) {
+  // Bilinear interpolation on flow field
+  const bx = fx - 0.5;
+  const by = fy - 0.5;
+  const ix = Math.floor(bx);
+  const iy = Math.floor(by);
+  const tx = bx - ix;
+  const ty = by - iy;
+  if (ix < 0 || ix >= flowCols - 1 || iy < 0 || iy >= flowRows - 1) return null;
+  const f00 = flowField[iy][ix];
+  const f10 = flowField[iy][ix + 1];
+  const f01 = flowField[iy + 1][ix];
+  const f11 = flowField[iy + 1][ix + 1];
+  return {
+    vx: f00.vx*(1-tx)*(1-ty) + f10.vx*tx*(1-ty) + f01.vx*(1-tx)*ty + f11.vx*tx*ty,
+    vy: f00.vy*(1-tx)*(1-ty) + f10.vy*tx*(1-ty) + f01.vy*(1-tx)*ty + f11.vy*tx*ty,
+  };
+}
+
 function drawFlowField() {
   if (!showFlowVis || !flowAvailable || !flowField) return;
 
-  for (let by = 0; by < flowRows; by++) {
-    for (let bx = 0; bx < flowCols; bx++) {
-      const f = flowField[by][bx];
-      const mag = Math.sqrt(f.vx * f.vx + f.vy * f.vy);
-      if (mag < FLOW_THRESHOLD) continue;
+  // Dense sampling: step in GIF pixel space
+  const step = 12; // pixels in original GIF coords
+  ctx.save();
+  for (let gy = 0; gy < GIF_NAT_H; gy += step) {
+    for (let gx = 0; gx < GIF_NAT_W; gx += step) {
+      // Convert GIF coords to flow grid coords
+      const fx = (gx * 0.5) / FLOW_BLOCK;
+      const fy = (gy * 0.5) / FLOW_BLOCK;
+      const f = sampleFlowAt(fx, fy);
+      if (!f) continue;
 
-      const gx = (bx * FLOW_BLOCK + FLOW_BLOCK / 2) * 2;
-      const gy = (by * FLOW_BLOCK + FLOW_BLOCK / 2) * 2;
+      const mag = Math.sqrt(f.vx * f.vx + f.vy * f.vy);
+      if (mag < FLOW_THRESHOLD / steamIntensity) continue;
+
       const sx = gifRect.x + gx * gifRect.scale;
       const sy = gifRect.y + gy * gifRect.scale;
 
-      const arrowLen = mag * gifRect.scale * 3;
+      const arrowLen = Math.max(mag * gifRect.scale * 6 * steamIntensity, 4);
       const nx = f.vx / mag;
       const ny = f.vy / mag;
       const alpha = Math.min(1, mag * 0.6);
@@ -394,21 +486,30 @@ function drawFlowField() {
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
+      const headLen = Math.max(3, arrowLen * 0.35);
+      const angle = Math.atan2(ny, nx);
       ctx.beginPath();
-      ctx.arc(sx + nx * arrowLen, sy + ny * arrowLen, 2, 0, Math.PI * 2);
+      ctx.moveTo(sx + nx * arrowLen, sy + ny * arrowLen);
+      ctx.lineTo(sx + nx * arrowLen - headLen * Math.cos(angle - 0.4),
+                 sy + ny * arrowLen - headLen * Math.sin(angle - 0.4));
+      ctx.lineTo(sx + nx * arrowLen - headLen * Math.cos(angle + 0.4),
+                 sy + ny * arrowLen - headLen * Math.sin(angle + 0.4));
+      ctx.closePath();
       ctx.fillStyle = `rgba(100,200,255,${alpha})`;
       ctx.fill();
     }
   }
+  ctx.restore();
 }
 
 // ============================================================
 // PSEUDO-HAPTIC CURSOR
 // ============================================================
 let mouseX = 0, mouseY = 0;
+let prevMouseX = 0, prevMouseY = 0;
+let mouseInited = false;
 let cursorX = 0, cursorY = 0;
-let displacementAccX = 0, displacementAccY = 0;
-let gain = 1.2;
+let gain = 7.5;
 let effectEnabled = true;
 let showTrail = false;
 let showDispLine = true;
@@ -417,38 +518,38 @@ let cursorTrail = [];
 document.addEventListener('mousemove', (e) => {
   mouseX = e.clientX;
   mouseY = e.clientY;
+  if (!mouseInited) {
+    prevMouseX = mouseX;
+    prevMouseY = mouseY;
+    cursorX = mouseX;
+    cursorY = mouseY;
+    mouseInited = true;
+  }
 });
 
 function updateCursor(dt, time) {
+  const dmx = mouseX - prevMouseX;
+  const dmy = mouseY - prevMouseY;
+  prevMouseX = mouseX;
+  prevMouseY = mouseY;
+
   if (!effectEnabled) {
     cursorX = mouseX;
     cursorY = mouseY;
-    displacementAccX = 0;
-    displacementAccY = 0;
     return;
   }
 
-  const steam = getSteamVelocityAt(mouseX, mouseY);
+  const steam = getSteamVelocityAt(cursorX, cursorY);
 
   if (steam.inZone) {
-    displacementAccX += steam.vx * gain * dt * 30;
-    displacementAccY += steam.vy * gain * dt * 30;
-
-    const maxDisp = 40 * gain;
-    const mag = Math.sqrt(displacementAccX ** 2 + displacementAccY ** 2);
-    if (mag > maxDisp) {
-      displacementAccX *= maxDisp / mag;
-      displacementAccY *= maxDisp / mag;
-    }
+    // ポインタ移動量 + 速度場の成分
+    cursorX += dmx + steam.vx * gain * dt * 30;
+    cursorY += dmy + steam.vy * gain * dt * 30;
   } else {
-    displacementAccX *= 0.85;
-    displacementAccY *= 0.85;
-    if (Math.abs(displacementAccX) < 0.1) displacementAccX = 0;
-    if (Math.abs(displacementAccY) < 0.1) displacementAccY = 0;
+    // ゾーン外: 変位を保持したままポインタ移動に追従
+    cursorX += dmx;
+    cursorY += dmy;
   }
-
-  cursorX = mouseX + displacementAccX;
-  cursorY = mouseY + displacementAccY;
 
   if (showTrail) {
     cursorTrail.push({ x: cursorX, y: cursorY, t: 1.0 });
@@ -533,6 +634,12 @@ function loop(timestamp) {
 
   ctx.clearRect(0, 0, W, H);
 
+  // Draw decoded GIF frame on canvas
+  const gifFrame = getCurrentGifFrame(dt);
+  if (gifFrame) {
+    ctx.drawImage(gifFrame, gifRect.x, gifRect.y, gifRect.w, gifRect.h);
+  }
+
   captureAndComputeFlow(timestamp);
   drawFlowField();
   updateCursor(dt, time);
@@ -546,7 +653,16 @@ function loop(timestamp) {
 }
 
 window.addEventListener('resize', resize);
-requestAnimationFrame(loop);
+
+// GIF load完了後にフレーム分解してからループ開始
+async function startApp() {
+  if (!gifEl.complete) {
+    await new Promise(r => gifEl.addEventListener('load', r));
+  }
+  await decodeGifFrames();
+  requestAnimationFrame(loop);
+}
+startApp();
 </script>
 </body>
 </html>
