@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pseudo-Haptic Pixel Art - Coffee Steam</title>
+<title>Pseudo-Haptic Pixel Art - Late Night Cafe</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #1a1a2e;
+    background: #0a0a12;
     color: #e0e0e0;
     font-family: 'Courier New', monospace;
     overflow: hidden;
@@ -36,8 +36,8 @@
     position: fixed;
     top: 12px;
     right: 12px;
-    background: rgba(20, 20, 40, 0.92);
-    border: 1px solid #444;
+    background: rgba(8, 8, 16, 0.94);
+    border: 1px solid #333;
     border-radius: 8px;
     padding: 14px 18px;
     font-size: 13px;
@@ -48,21 +48,21 @@
   #controls h3 {
     font-size: 14px;
     margin-bottom: 8px;
-    color: #ffcc66;
-    border-bottom: 1px solid #444;
+    color: #cc9944;
+    border-bottom: 1px solid #333;
     padding-bottom: 4px;
   }
   #controls label {
     display: flex; align-items: center; gap: 8px; margin: 6px 0;
   }
-  #controls input[type="range"] { width: 120px; accent-color: #ffcc66; }
-  #controls .val { color: #ffcc66; min-width: 32px; text-align: right; }
+  #controls input[type="range"] { width: 120px; accent-color: #cc9944; }
+  #controls .val { color: #cc9944; min-width: 32px; text-align: right; }
   .info-badge {
     position: fixed;
     bottom: 12px;
     left: 12px;
-    background: rgba(20, 20, 40, 0.88);
-    border: 1px solid #444;
+    background: rgba(8, 8, 16, 0.92);
+    border: 1px solid #333;
     border-radius: 8px;
     padding: 10px 16px;
     font-size: 12px;
@@ -70,23 +70,23 @@
     z-index: 500;
     max-width: 400px;
   }
-  .info-badge .title { color: #ffcc66; font-weight: bold; }
-  .info-badge .subtle { color: #888; }
+  .info-badge .title { color: #cc9944; font-weight: bold; }
+  .info-badge .subtle { color: #666; }
   #displacement-indicator {
     position: fixed;
     top: 12px;
     left: 12px;
-    background: rgba(20, 20, 40, 0.88);
-    border: 1px solid #444;
+    background: rgba(8, 8, 16, 0.92);
+    border: 1px solid #333;
     border-radius: 8px;
     padding: 10px 16px;
     font-size: 13px;
     z-index: 500;
   }
-  #displacement-indicator .label { color: #888; }
-  #displacement-indicator .value { color: #ff6666; font-weight: bold; }
+  #displacement-indicator .label { color: #666; }
+  #displacement-indicator .value { color: #cc6644; font-weight: bold; }
   .toggle-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
-  .toggle-row input[type="checkbox"] { accent-color: #ffcc66; }
+  .toggle-row input[type="checkbox"] { accent-color: #cc9944; }
 </style>
 </head>
 <body>
@@ -142,8 +142,8 @@
 
 <div class="info-badge">
   <div class="title">Pseudo-Haptic Pixel Art Demo</div>
-  <div>コーヒーの湯気の上にカーソルを置くと、<br>
-  湯気の動きに合わせてカーソルが揺れ・上昇します。</div>
+  <div>深夜のカフェでカーソルを湯気の上に置くと、<br>
+  静かに立ち昇る湯気に揺られます。</div>
   <div class="subtle">パーティクルシステムで湯気を生成し、視覚的カーソル変位で疑似力覚を提示</div>
 </div>
 
@@ -170,26 +170,86 @@ resize();
 window.addEventListener('resize', resize);
 
 // ============================================================
-// PALETTE
+// PALETTE — deep, melancholic late-night cafe
 // ============================================================
 const PAL = {
-  bg:        '#1a1a2e',
-  table:     '#5c3d2e',
-  tableLit:  '#7a5540',
-  tableDk:   '#3e2518',
-  cup:       '#f5f0e8',
-  cupShade:  '#d4cfc5',
-  cupDark:   '#b0a898',
-  coffee:    '#3e1f0d',
-  coffeeLit: '#5a2e14',
-  saucer:    '#e8e0d4',
-  saucerDk:  '#c8bfb0',
-  wall:      '#16213e',
-  wallLit:   '#1a2744',
-  window:    '#0f3460',
-  windowLit: '#1a4a80',
-  frame:     '#5c4033',
+  bg:        '#0a0a12',
+  // Wall: very dark navy, almost black
+  wall:      '#0c0e1a',
+  wallLit:   '#101322',
+  wallHi:    '#161a2e',
+  // Window: rainy night
+  window:    '#060a14',
+  windowLit: '#0a1020',
+  windowRain:'#0d1428',
+  frame:     '#2a1e16',
+  frameLit:  '#3a2c20',
+  // Table: dark wood
+  table:     '#2e1c12',
+  tableLit:  '#3a2818',
+  tableDk:   '#1a0e08',
+  tableEdge: '#4a3424',
+  // Cup
+  cup:       '#d8d0c4',
+  cupShade:  '#b0a898',
+  cupDark:   '#8a8070',
+  coffee:    '#1a0c04',
+  coffeeLit: '#2c1408',
+  coffeeHi:  '#3a1e10',
+  // Saucer
+  saucer:    '#c0b8a8',
+  saucerDk:  '#908878',
+  // Lamp
+  lampMetal: '#444038',
+  lampShade: '#6e5c3c',
+  lampInner: '#cc9944',
+  lampGlow:  '#cc9944',
+  // Book
+  bookCover: '#2a1a30',
+  bookPages: '#c8c0b4',
+  bookSpine: '#1e1228',
+  // Phone
+  phoneBody: '#1a1a22',
+  phoneScreen:'#4466aa',
+  // City lights (through rain)
+  cityLight1:'#cc8844',
+  cityLight2:'#88aacc',
+  cityLight3:'#cc6644',
 };
+
+// ============================================================
+// RAIN PARTICLES
+// ============================================================
+let rainDrops = [];
+const RAIN_COUNT = 60;
+
+function createRainDrop() {
+  return {
+    x: Math.random(),  // 0-1 within window area
+    y: Math.random(),
+    speed: 0.3 + Math.random() * 0.5,
+    length: 2 + Math.random() * 3,
+    opacity: 0.15 + Math.random() * 0.25,
+  };
+}
+
+function initRain() {
+  rainDrops = [];
+  for (let i = 0; i < RAIN_COUNT; i++) rainDrops.push(createRainDrop());
+}
+initRain();
+
+function updateRain(dt) {
+  for (let r of rainDrops) {
+    r.y += r.speed * dt;
+    r.x -= r.speed * dt * 0.3; // diagonal rain
+    if (r.y > 1 || r.x < 0) {
+      r.y = -0.05;
+      r.x = Math.random();
+      r.speed = 0.3 + Math.random() * 0.5;
+    }
+  }
+}
 
 // ============================================================
 // PIXEL ART SCENE
@@ -215,52 +275,342 @@ function buildScene() {
   sceneCanvas.width = W;
   sceneCanvas.height = H;
   const s = sceneCtx;
-  drawRect(s, 0, 0, COLS, ROWS, PAL.wall);
+
+  // Fill entire canvas with near-black
+  s.fillStyle = PAL.bg;
+  s.fillRect(0, 0, W, H);
+
+  // --- Wall: very dark gradient ---
   for (let y = 0; y < ROWS; y++) {
     const t = y / ROWS;
-    const c = Math.floor(22 + t * 8);
-    drawRect(s, 0, y, COLS, 1, `rgb(${c},${c+12},${c+40})`);
+    const r = Math.floor(10 + t * 6);
+    const g = Math.floor(12 + t * 6);
+    const b = Math.floor(22 + t * 10);
+    drawRect(s, 0, y, COLS, 1, `rgb(${r},${g},${b})`);
   }
+
+  // --- Window frame (outer) ---
   drawRect(s, 20, 10, 40, 30, PAL.frame);
-  drawRect(s, 22, 12, 36, 26, PAL.window);
-  drawRect(s, 22, 12, 17, 12, PAL.windowLit);
-  drawRect(s, 41, 12, 17, 12, PAL.windowLit);
-  drawRect(s, 22, 26, 17, 12, PAL.window);
-  drawRect(s, 41, 26, 17, 12, PAL.window);
+  // Window frame highlight (top)
+  drawRect(s, 20, 10, 40, 1, PAL.frameLit);
+
+  // --- Window panes: dark rainy night ---
+  // Upper-left pane
+  drawRect(s, 22, 12, 17, 12, PAL.window);
+  // Upper-right pane
+  drawRect(s, 41, 12, 17, 12, PAL.window);
+  // Lower-left pane
+  drawRect(s, 22, 26, 17, 12, PAL.windowRain);
+  // Lower-right pane
+  drawRect(s, 41, 26, 17, 12, PAL.windowRain);
+
+  // Crossbars
   drawRect(s, 39, 12, 2, 26, PAL.frame);
   drawRect(s, 22, 24, 36, 2, PAL.frame);
+
+  // --- Distant city lights through rain (tiny warm/cool dots) ---
+  const cityLights = [
+    // [gx, gy, color]  — scattered in window panes
+    [26, 16, PAL.cityLight1], [28, 17, PAL.cityLight2],
+    [32, 14, PAL.cityLight3], [35, 18, PAL.cityLight1],
+    [24, 20, PAL.cityLight2], [30, 21, PAL.cityLight1],
+    [44, 15, PAL.cityLight1], [48, 17, PAL.cityLight2],
+    [52, 14, PAL.cityLight3], [46, 19, PAL.cityLight1],
+    [50, 21, PAL.cityLight2], [54, 16, PAL.cityLight3],
+    [43, 28, PAL.cityLight1], [47, 30, PAL.cityLight2],
+    [51, 29, PAL.cityLight3], [55, 32, PAL.cityLight1],
+    [24, 29, PAL.cityLight2], [28, 31, PAL.cityLight1],
+    [33, 28, PAL.cityLight3], [36, 33, PAL.cityLight2],
+  ];
+  for (const [lx, ly, lc] of cityLights) {
+    drawPixel(s, lx, ly, lc);
+  }
+
+  // --- Condensation/fog on lower window panes ---
+  for (let px = 22; px < 58; px++) {
+    for (let py = 30; py < 38; py++) {
+      if (Math.random() < 0.08) {
+        const alpha = 0.03 + Math.random() * 0.06;
+        const ox2 = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+        const oy2 = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+        s.fillStyle = `rgba(140,160,200,${alpha})`;
+        s.fillRect(ox2 + px * PIXEL_SIZE, oy2 + py * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+      }
+    }
+  }
+
+  // --- Hanging pendant lamp ---
+  // Cord from ceiling
+  const lampCx = 80;
+  const lampTop = 5;
+  const lampBottom = 20;
+  drawRect(s, lampCx, lampTop, 1, lampBottom - lampTop - 3, PAL.lampMetal);
+  // Lampshade (trapezoid, pixel-approximation)
+  drawRect(s, lampCx - 4, lampBottom - 3, 9, 1, PAL.lampShade);
+  drawRect(s, lampCx - 5, lampBottom - 2, 11, 1, PAL.lampShade);
+  drawRect(s, lampCx - 6, lampBottom - 1, 13, 1, PAL.lampShade);
+  drawRect(s, lampCx - 7, lampBottom,     15, 1, PAL.lampShade);
+  // Inner glow of lamp (bulb area)
+  drawRect(s, lampCx - 2, lampBottom - 2, 5, 2, PAL.lampInner);
+  drawRect(s, lampCx - 1, lampBottom - 3, 3, 1, PAL.lampGlow);
+
+  // --- Light cone from lamp onto table ---
+  // Subtle warm glow gradient on the wall below lamp
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+  for (let y = lampBottom + 1; y < 75; y++) {
+    const t = (y - lampBottom) / (75 - lampBottom);
+    const spread = Math.floor(8 + t * 20);
+    const alpha = 0.04 * (1 - t * 0.6);
+    for (let x = lampCx - spread; x <= lampCx + spread; x++) {
+      if (x < 0 || x >= COLS) continue;
+      const dx = Math.abs(x - lampCx) / spread;
+      const pa = alpha * (1 - dx * dx) * 0.7;
+      if (pa > 0.005) {
+        s.fillStyle = `rgba(200,150,80,${pa})`;
+        s.fillRect(ox + x * PIXEL_SIZE, oy + y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+      }
+    }
+  }
+
+  // --- Table ---
   const tableY = 75;
-  drawRect(s, 0, tableY, COLS, 4, PAL.tableLit);
+  // Table top highlight
+  drawRect(s, 0, tableY, COLS, 1, PAL.tableEdge);
+  drawRect(s, 0, tableY + 1, COLS, 1, PAL.tableDk);
+  drawRect(s, 0, tableY + 2, COLS, 2, PAL.tableLit);
   drawRect(s, 0, tableY + 4, COLS, ROWS - tableY - 4, PAL.table);
-  drawRect(s, 0, tableY, COLS, 1, PAL.tableLit);
-  drawRect(s, 0, tableY+1, COLS, 1, PAL.tableDk);
+
+  // Warm light pool on table surface (around cup area)
+  for (let y = tableY; y < tableY + 6; y++) {
+    for (let x = lampCx - 25; x <= lampCx + 25; x++) {
+      if (x < 0 || x >= COLS) continue;
+      const dx = (x - lampCx) / 25;
+      const dy = (y - tableY) / 6;
+      const dist = Math.sqrt(dx * dx * 0.5 + dy * dy);
+      if (dist < 1) {
+        const alpha = 0.06 * (1 - dist);
+        s.fillStyle = `rgba(200,150,80,${alpha})`;
+        s.fillRect(ox + x * PIXEL_SIZE, oy + y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+      }
+    }
+  }
+
+  // --- Saucer ---
   const cupCx = 80;
   const saucerY = tableY - 3;
   drawRect(s, cupCx - 16, saucerY, 32, 3, PAL.saucer);
   drawRect(s, cupCx - 18, saucerY + 1, 36, 2, PAL.saucer);
   drawRect(s, cupCx - 18, saucerY + 2, 36, 1, PAL.saucerDk);
+
+  // --- Cup ---
   const cupTop = saucerY - 18;
   const cupW = 20;
   drawRect(s, cupCx - cupW/2, cupTop, cupW, 18, PAL.cup);
   drawRect(s, cupCx + cupW/2 - 3, cupTop, 3, 18, PAL.cupShade);
   drawRect(s, cupCx + cupW/2 - 1, cupTop + 1, 1, 16, PAL.cupDark);
   drawRect(s, cupCx - cupW/2, cupTop, 1, 18, PAL.cupShade);
+  // Rim
   drawRect(s, cupCx - cupW/2 - 1, cupTop, cupW + 2, 2, PAL.cup);
-  drawRect(s, cupCx - cupW/2 - 1, cupTop, cupW + 2, 1, '#fff');
+  drawRect(s, cupCx - cupW/2 - 1, cupTop, cupW + 2, 1, '#b8b0a4');
+  // Coffee surface — very dark
   drawRect(s, cupCx - cupW/2 + 1, cupTop + 2, cupW - 2, 3, PAL.coffee);
   drawRect(s, cupCx - cupW/2 + 1, cupTop + 2, cupW - 4, 1, PAL.coffeeLit);
+  // Tiny coffee highlight
+  drawPixel(s, cupCx - 3, cupTop + 2, PAL.coffeeHi);
+  drawPixel(s, cupCx - 2, cupTop + 2, PAL.coffeeHi);
+  // Handle
   drawRect(s, cupCx + cupW/2, cupTop + 4, 4, 10, PAL.cup);
   drawRect(s, cupCx + cupW/2 + 4, cupTop + 6, 2, 6, PAL.cup);
   drawRect(s, cupCx + cupW/2, cupTop + 12, 6, 2, PAL.cupShade);
   drawRect(s, cupCx + cupW/2 + 4, cupTop + 6, 2, 6, PAL.cupShade);
-  drawRect(s, cupCx + 28, tableY - 5, 5, 5, '#f8f4ee');
-  drawRect(s, cupCx + 29, tableY - 8, 5, 5, '#f0ece4');
-  drawRect(s, cupCx + 28, tableY - 5, 5, 1, '#ddd8d0');
-  for (let i = 0; i < 15; i++) {
-    drawPixel(s, cupCx - 22 + i, tableY - 2 + Math.round(Math.sin(i*0.3)*0.8), '#c0b0a0');
+
+  // --- Warm glow around the cup ---
+  for (let dy = -8; dy <= 12; dy++) {
+    for (let dx = -14; dx <= 18; dx++) {
+      const gx = cupCx + dx;
+      const gy = cupTop + 9 + dy;
+      if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) continue;
+      const dist = Math.sqrt(dx * dx / 2 + dy * dy) / 12;
+      if (dist < 1 && dist > 0.5) {
+        const alpha = 0.025 * (1 - dist);
+        s.fillStyle = `rgba(200,150,80,${alpha})`;
+        s.fillRect(ox + gx * PIXEL_SIZE, oy + gy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+      }
+    }
   }
-  drawRect(s, cupCx - 23, tableY - 4, 3, 3, '#c8b8a8');
-  drawPixel(s, cupCx - 24, tableY - 3, '#c8b8a8');
+
+  // --- Open book on table (left of cup) ---
+  const bookX = cupCx - 30;
+  const bookY = tableY - 5;
+  // Left page
+  drawRect(s, bookX, bookY, 8, 6, PAL.bookPages);
+  // Right page
+  drawRect(s, bookX + 9, bookY, 8, 6, PAL.bookPages);
+  // Spine
+  drawRect(s, bookX + 8, bookY, 1, 6, PAL.bookSpine);
+  // Cover edges visible
+  drawRect(s, bookX - 1, bookY + 5, 10, 1, PAL.bookCover);
+  drawRect(s, bookX + 9, bookY + 5, 10, 1, PAL.bookCover);
+  // Text lines on pages (tiny dark dots)
+  for (let line = 0; line < 4; line++) {
+    for (let ch = 0; ch < 5; ch++) {
+      if (Math.random() < 0.7) {
+        drawPixel(s, bookX + 1 + ch, bookY + 1 + line, '#9a9488');
+      }
+      if (Math.random() < 0.7) {
+        drawPixel(s, bookX + 10 + ch, bookY + 1 + line, '#9a9488');
+      }
+    }
+  }
+
+  // --- Phone on table (right of cup) ---
+  const phoneX = cupCx + 24;
+  const phoneY = tableY - 6;
+  drawRect(s, phoneX, phoneY, 5, 8, PAL.phoneBody);
+  // Screen (slightly inset)
+  drawRect(s, phoneX + 1, phoneY + 1, 3, 5, '#1a2240');
+  // Screen content glow hint
+  drawPixel(s, phoneX + 2, phoneY + 2, '#334466');
+  drawPixel(s, phoneX + 2, phoneY + 3, '#2a3858');
+
+  // --- VIGNETTE (baked into scene) ---
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const nx = (x / COLS - 0.5) * 2; // -1 to 1
+      const ny = (y / ROWS - 0.5) * 2;
+      const dist = Math.sqrt(nx * nx + ny * ny);
+      // Vignette starts at dist ~0.6, fully dark at ~1.4
+      if (dist > 0.5) {
+        const vignetteAlpha = Math.min((dist - 0.5) * 0.7, 0.85);
+        s.fillStyle = `rgba(4,4,8,${vignetteAlpha})`;
+        s.fillRect(ox + x * PIXEL_SIZE, oy + y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+      }
+    }
+  }
+}
+
+// ============================================================
+// ANIMATED OVERLAYS (rain, lamp flicker, phone glow)
+// ============================================================
+function drawAnimatedOverlays(time) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+
+  // --- Rain streaks on window ---
+  // Window pane boundaries (grid coords)
+  const winPanes = [
+    { x1: 22, y1: 12, x2: 39, y2: 24 },
+    { x1: 41, y1: 12, x2: 58, y2: 24 },
+    { x1: 22, y1: 26, x2: 39, y2: 38 },
+    { x1: 41, y1: 26, x2: 58, y2: 38 },
+  ];
+
+  ctx.save();
+  for (const pane of winPanes) {
+    // Clip to pane area
+    const px1 = ox + pane.x1 * PIXEL_SIZE;
+    const py1 = oy + pane.y1 * PIXEL_SIZE;
+    const pw = (pane.x2 - pane.x1) * PIXEL_SIZE;
+    const ph = (pane.y2 - pane.y1) * PIXEL_SIZE;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(px1, py1, pw, ph);
+    ctx.clip();
+
+    for (const drop of rainDrops) {
+      const rx = px1 + drop.x * pw;
+      const ry = py1 + drop.y * ph;
+      const len = drop.length * PIXEL_SIZE;
+
+      ctx.strokeStyle = `rgba(130,160,210,${drop.opacity})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx - len * 0.3, ry + len);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // --- City lights twinkle ---
+  const cityLightsAnim = [
+    [26, 16, 200, 140, 60],  [28, 17, 120, 160, 200],
+    [32, 14, 200, 100, 60],  [35, 18, 200, 140, 60],
+    [44, 15, 200, 140, 60],  [48, 17, 120, 160, 200],
+    [52, 14, 200, 100, 60],  [50, 21, 120, 160, 200],
+  ];
+  for (let i = 0; i < cityLightsAnim.length; i++) {
+    const [lx, ly, r, g, b] = cityLightsAnim[i];
+    const flicker = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(time * (1.5 + i * 0.7) + i * 2.3));
+    const alpha = flicker * 0.4;
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+    ctx.fillRect(
+      ox + (lx - 1) * PIXEL_SIZE,
+      oy + (ly - 1) * PIXEL_SIZE,
+      3 * PIXEL_SIZE,
+      3 * PIXEL_SIZE
+    );
+  }
+
+  // --- Lamp flicker ---
+  const lampCx = 80;
+  const lampBottom = 20;
+  const lampFlicker = 0.85 + 0.15 * Math.sin(time * 3.7 + Math.sin(time * 7.1) * 0.5);
+  const lampAlpha = 0.12 * lampFlicker;
+
+  // Warm glow around lamp bulb
+  const glowR = 12;
+  for (let dy = -glowR; dy <= glowR; dy++) {
+    for (let dx = -glowR; dx <= glowR; dx++) {
+      const gx = lampCx + dx;
+      const gy = lampBottom - 1 + dy;
+      if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) continue;
+      const dist = Math.sqrt(dx * dx + dy * dy) / glowR;
+      if (dist < 1) {
+        const a = lampAlpha * (1 - dist * dist);
+        ctx.fillStyle = `rgba(220,170,80,${a})`;
+        ctx.fillRect(ox + gx * PIXEL_SIZE, oy + gy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+      }
+    }
+  }
+
+  // Light cone flicker on the wall/table
+  for (let y = lampBottom + 1; y < 76; y++) {
+    const t = (y - lampBottom) / (76 - lampBottom);
+    const spread = Math.floor(8 + t * 22);
+    const coneAlpha = 0.02 * lampFlicker * (1 - t * 0.5);
+    for (let x = lampCx - spread; x <= lampCx + spread; x += 2) {
+      if (x < 0 || x >= COLS) continue;
+      const dx = Math.abs(x - lampCx) / spread;
+      const pa = coneAlpha * (1 - dx * dx);
+      if (pa > 0.003) {
+        ctx.fillStyle = `rgba(220,170,80,${pa})`;
+        ctx.fillRect(ox + x * PIXEL_SIZE, oy + y * PIXEL_SIZE, 2 * PIXEL_SIZE, PIXEL_SIZE);
+      }
+    }
+  }
+
+  // --- Phone screen glow pulse ---
+  const phoneX = 80 + 24;
+  const phoneY = 75 - 6;
+  const phonePulse = 0.5 + 0.5 * Math.sin(time * 0.8);
+  const phoneAlpha = 0.04 + phonePulse * 0.04;
+  for (let dy = -3; dy <= 8; dy++) {
+    for (let dx = -3; dx <= 7; dx++) {
+      const gx = phoneX + dx;
+      const gy = phoneY + dy;
+      if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) continue;
+      const dist = Math.sqrt(dx * dx + dy * dy) / 6;
+      if (dist < 1) {
+        const a = phoneAlpha * (1 - dist);
+        ctx.fillStyle = `rgba(80,120,200,${a})`;
+        ctx.fillRect(ox + gx * PIXEL_SIZE, oy + gy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+      }
+    }
+  }
 }
 
 // ============================================================
@@ -310,11 +660,17 @@ function updateSteam(dt, time) {
 
 function drawSteam() {
   for (let p of steamParticles) {
-    const alpha = Math.max(0, p.life * 0.35);
+    // Dimmer, more translucent — ghostly steam
+    const alpha = Math.max(0, p.life * 0.18);
     const sz = p.size * PIXEL_SIZE * (1 + (1 - p.life) * 0.8);
     const snapX = Math.round(p.x / PIXEL_SIZE) * PIXEL_SIZE;
     const snapY = Math.round(p.y / PIXEL_SIZE) * PIXEL_SIZE;
-    ctx.fillStyle = `rgba(210,215,230,${alpha})`;
+    // Warm-tinted steam reflecting the lamp light
+    const warmth = Math.max(0, p.life * 0.5);
+    const r = Math.floor(180 + warmth * 40);
+    const g = Math.floor(175 + warmth * 30);
+    const b = Math.floor(190 + warmth * 10);
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
     ctx.fillRect(snapX, snapY,
       Math.ceil(sz / PIXEL_SIZE) * PIXEL_SIZE,
       Math.ceil(sz / PIXEL_SIZE) * PIXEL_SIZE);
@@ -404,11 +760,9 @@ function updateCursor(dt, time) {
   const steam = getSteamVelocityAt(cursorX, cursorY);
 
   if (steam.inZone) {
-    // ポインタ移動量 + 速度場の成分
     cursorX += dmx + steam.vx * gain * dt * 30;
     cursorY += dmy + steam.vy * gain * dt * 30;
   } else {
-    // ゾーン外: 変位を保持したままポインタ移動に追従
     cursorX += dmx;
     cursorY += dmy;
   }
@@ -427,7 +781,7 @@ function drawCursorTrail() {
     if (p.t <= 0) { cursorTrail.splice(i, 1); i--; continue; }
     ctx.beginPath();
     ctx.arc(p.x, p.y, 3 * p.t, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255,200,100,${p.t * 0.5})`;
+    ctx.fillStyle = `rgba(200,150,80,${p.t * 0.4})`;
     ctx.fill();
   }
 }
@@ -444,7 +798,7 @@ function drawDisplacementLine() {
     ctx.beginPath();
     ctx.moveTo(mouseX, mouseY);
     ctx.lineTo(cursorX, cursorY);
-    ctx.strokeStyle = 'rgba(255,100,100,0.4)';
+    ctx.strokeStyle = 'rgba(200,80,60,0.35)';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
     ctx.stroke();
@@ -452,7 +806,7 @@ function drawDisplacementLine() {
 
     ctx.beginPath();
     ctx.arc(mouseX, mouseY, 3, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,100,100,0.5)';
+    ctx.fillStyle = 'rgba(200,80,60,0.4)';
     ctx.fill();
   }
 
@@ -499,7 +853,7 @@ function drawVelocityField() {
 
       // Color: map magnitude to hue (blue=slow, cyan, green, yellow, red=fast)
       const normMag = Math.min(mag / (3 * PIXEL_SIZE), 1);
-      const hue = (1 - normMag) * 240; // 240(blue) → 0(red)
+      const hue = (1 - normMag) * 240; // 240(blue) -> 0(red)
       const alpha = 0.4 + normMag * 0.4;
 
       ctx.strokeStyle = `hsla(${hue}, 90%, 60%, ${alpha})`;
@@ -566,7 +920,16 @@ function loop(timestamp) {
   lastTime = time;
 
   ctx.clearRect(0, 0, W, H);
+
+  // Fill background with near-black (visible outside the pixel art area)
+  ctx.fillStyle = PAL.bg;
+  ctx.fillRect(0, 0, W, H);
+
   ctx.drawImage(sceneCanvas, 0, 0);
+
+  // Animated overlays (rain, lamp flicker, phone glow)
+  updateRain(dt);
+  drawAnimatedOverlays(time);
 
   currentTime = time;
   updateSteam(dt, time);
@@ -586,6 +949,7 @@ window.addEventListener('resize', () => {
   resize();
   buildScene();
   initSteam();
+  initRain();
 });
 
 buildScene();

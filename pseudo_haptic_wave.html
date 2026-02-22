@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pseudo-Haptic Pixel Art - Wave / Ocean</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: none;
+  }
+  #main-canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    cursor: none;
+  }
+  #custom-cursor {
+    position: fixed;
+    pointer-events: none;
+    z-index: 1000;
+    width: 16px;
+    height: 24px;
+    transition: none;
+  }
+  #cursor-arrow { position: absolute; top: 0; left: 0; }
+  #controls {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    background: rgba(20, 20, 40, 0.92);
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 13px;
+    line-height: 1.7;
+    max-width: 310px;
+    z-index: 500;
+  }
+  #controls h3 {
+    font-size: 14px;
+    margin-bottom: 8px;
+    color: #66ccff;
+    border-bottom: 1px solid #444;
+    padding-bottom: 4px;
+  }
+  #controls label {
+    display: flex; align-items: center; gap: 8px; margin: 6px 0;
+  }
+  #controls input[type="range"] { width: 120px; accent-color: #66ccff; }
+  #controls .val { color: #66ccff; min-width: 32px; text-align: right; }
+  .info-badge {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    background: rgba(20, 20, 40, 0.88);
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 12px;
+    line-height: 1.6;
+    z-index: 500;
+    max-width: 400px;
+  }
+  .info-badge .title { color: #66ccff; font-weight: bold; }
+  .info-badge .subtle { color: #888; }
+  #displacement-indicator {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    background: rgba(20, 20, 40, 0.88);
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 13px;
+    z-index: 500;
+  }
+  #displacement-indicator .label { color: #888; }
+  #displacement-indicator .value { color: #ff6666; font-weight: bold; }
+  .toggle-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .toggle-row input[type="checkbox"] { accent-color: #66ccff; }
+</style>
+</head>
+<body>
+
+<canvas id="main-canvas"></canvas>
+
+<div id="custom-cursor">
+  <svg id="cursor-arrow" width="16" height="24" viewBox="0 0 16 24">
+    <polygon points="1,1 1,19 5.5,15 9,22 12,20.5 8,14 14,12"
+             fill="white" stroke="#333" stroke-width="1.2"/>
+  </svg>
+</div>
+
+<div id="controls">
+  <h3>Parameters</h3>
+  <label>
+    Gain (C/D ratio)
+    <input type="range" id="gain-slider" min="0" max="10" step="0.1" value="0.3">
+    <span class="val" id="gain-val">0.3</span>
+  </label>
+  <label>
+    Wave intensity
+    <input type="range" id="wave-slider" min="0.2" max="2" step="0.1" value="1.0">
+    <span class="val" id="wave-val">1.0</span>
+  </label>
+  <label>
+    Wave particle count
+    <input type="range" id="count-slider" min="10" max="120" step="5" value="50">
+    <span class="val" id="count-val">50</span>
+  </label>
+  <div class="toggle-row">
+    <input type="checkbox" id="toggle-effect" checked>
+    <label for="toggle-effect">Enable pseudo-haptic effect</label>
+  </div>
+  <div class="toggle-row">
+    <input type="checkbox" id="toggle-trail">
+    <label for="toggle-trail">Show cursor trail</label>
+  </div>
+  <div class="toggle-row">
+    <input type="checkbox" id="toggle-displine" checked>
+    <label for="toggle-displine">Show displacement line</label>
+  </div>
+  <div class="toggle-row">
+    <input type="checkbox" id="toggle-flowfield">
+    <label for="toggle-flowfield">Show velocity field</label>
+  </div>
+</div>
+
+<div id="displacement-indicator">
+  <span class="label">Cursor displacement: </span>
+  <span class="value" id="disp-value">0.0 px</span>
+</div>
+
+<div class="info-badge">
+  <div class="title">Pseudo-Haptic Pixel Art Demo — Wave</div>
+  <div>海面の上にカーソルを置くと、<br>
+  波の流れに合わせてカーソルが流され・揺られます。</div>
+  <div class="subtle">パーティクルシステムで波を生成し、視覚的カーソル変位で疑似力覚を提示</div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const PIXEL_SIZE = 6;
+const COLS = 160;
+const ROWS = 120;
+
+const canvas = document.getElementById('main-canvas');
+const ctx = canvas.getContext('2d');
+const cursorEl = document.getElementById('custom-cursor');
+
+let W, H;
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ============================================================
+// PALETTE
+// ============================================================
+const PAL = {
+  // Sky gradient (sunset)
+  skyTop:     '#1a0a3e',
+  skyMid:     '#4a1a5e',
+  skyLow:     '#cc4422',
+  skyHorizon: '#ff8844',
+  // Sun
+  sun:        '#ffdd44',
+  sunGlow:    '#ffaa22',
+  // Sea
+  seaDeep:    '#0a1628',
+  seaDark:    '#0c2244',
+  seaMid:     '#104060',
+  seaLight:   '#1a6088',
+  seaHighlight: '#2288aa',
+  // Foam/whitecap
+  foam:       '#ddeeff',
+  foamBright: '#ffffff',
+  // Sand
+  sandLight:  '#c8a870',
+  sandMid:    '#a08050',
+  sandDark:   '#786040',
+  sandWet:    '#5a4830',
+};
+
+// ============================================================
+// PIXEL ART SCENE (Ocean / Sunset)
+// ============================================================
+const sceneCanvas = document.createElement('canvas');
+const sceneCtx = sceneCanvas.getContext('2d');
+
+// Horizon line in grid coords
+const HORIZON_Y = 45;
+const SAND_Y = 110;
+
+function drawPixel(sctx, gx, gy, color) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+  sctx.fillStyle = color;
+  sctx.fillRect(ox + gx * PIXEL_SIZE, oy + gy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+}
+
+function drawRect(sctx, gx, gy, gw, gh, color) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+  sctx.fillStyle = color;
+  sctx.fillRect(ox + gx * PIXEL_SIZE, oy + gy * PIXEL_SIZE, gw * PIXEL_SIZE, gh * PIXEL_SIZE);
+}
+
+function lerpColor(c1, c2, t) {
+  // Parse hex
+  const r1 = parseInt(c1.slice(1, 3), 16), g1 = parseInt(c1.slice(3, 5), 16), b1 = parseInt(c1.slice(5, 7), 16);
+  const r2 = parseInt(c2.slice(1, 3), 16), g2 = parseInt(c2.slice(3, 5), 16), b2 = parseInt(c2.slice(5, 7), 16);
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const b = Math.round(b1 + (b2 - b1) * t);
+  return `rgb(${r},${g},${b})`;
+}
+
+function buildScene() {
+  sceneCanvas.width = W;
+  sceneCanvas.height = H;
+  const s = sceneCtx;
+
+  // --- Sky gradient ---
+  for (let y = 0; y < HORIZON_Y; y++) {
+    const t = y / HORIZON_Y;
+    let color;
+    if (t < 0.4) {
+      color = lerpColor(PAL.skyTop, PAL.skyMid, t / 0.4);
+    } else if (t < 0.75) {
+      color = lerpColor(PAL.skyMid, PAL.skyLow, (t - 0.4) / 0.35);
+    } else {
+      color = lerpColor(PAL.skyLow, PAL.skyHorizon, (t - 0.75) / 0.25);
+    }
+    drawRect(s, 0, y, COLS, 1, color);
+  }
+
+  // --- Sun (pixel circle near horizon) ---
+  const sunCx = 80;
+  const sunCy = HORIZON_Y - 12;
+  const sunR = 8;
+  for (let dy = -sunR; dy <= sunR; dy++) {
+    for (let dx = -sunR; dx <= sunR; dx++) {
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= sunR) {
+        const c = dist < sunR * 0.6 ? PAL.sun : PAL.sunGlow;
+        drawPixel(s, sunCx + dx, sunCy + dy, c);
+      }
+    }
+  }
+
+  // --- Sun glow / reflection on sky ---
+  for (let dy = -sunR - 4; dy <= sunR + 4; dy++) {
+    for (let dx = -sunR - 6; dx <= sunR + 6; dx++) {
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > sunR && dist < sunR + 5) {
+        const alpha = (1 - (dist - sunR) / 5) * 0.3;
+        const gx = sunCx + dx;
+        const gy = sunCy + dy;
+        if (gy >= 0 && gy < HORIZON_Y && gx >= 0 && gx < COLS) {
+          const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+          const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+          s.fillStyle = `rgba(255, 200, 100, ${alpha})`;
+          s.fillRect(ox + gx * PIXEL_SIZE, oy + gy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+        }
+      }
+    }
+  }
+
+  // --- Clouds (a few small pixel clusters) ---
+  const clouds = [
+    { x: 30, y: 12, w: 12, h: 3 },
+    { x: 110, y: 18, w: 15, h: 3 },
+    { x: 55, y: 8, w: 8, h: 2 },
+    { x: 130, y: 10, w: 10, h: 2 },
+  ];
+  for (const cl of clouds) {
+    for (let dy = 0; dy < cl.h; dy++) {
+      for (let dx = 0; dx < cl.w; dx++) {
+        // Elliptical shape
+        const nx = (dx / cl.w - 0.5) * 2;
+        const ny = (dy / cl.h - 0.5) * 2;
+        if (nx * nx + ny * ny < 1) {
+          const alpha = 0.15 + 0.1 * (1 - nx * nx - ny * ny);
+          const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+          const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+          s.fillStyle = `rgba(255, 200, 180, ${alpha})`;
+          s.fillRect(ox + (cl.x + dx) * PIXEL_SIZE, oy + (cl.y + dy) * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+        }
+      }
+    }
+  }
+
+  // --- Sea base ---
+  for (let y = HORIZON_Y; y < SAND_Y; y++) {
+    const t = (y - HORIZON_Y) / (SAND_Y - HORIZON_Y);
+    let color;
+    if (t < 0.15) {
+      color = lerpColor(PAL.seaHighlight, PAL.seaLight, t / 0.15);
+    } else if (t < 0.5) {
+      color = lerpColor(PAL.seaLight, PAL.seaMid, (t - 0.15) / 0.35);
+    } else {
+      color = lerpColor(PAL.seaMid, PAL.seaDark, (t - 0.5) / 0.5);
+    }
+    drawRect(s, 0, y, COLS, 1, color);
+  }
+
+  // --- Sun reflection on water (shimmer column) ---
+  for (let y = HORIZON_Y; y < SAND_Y; y++) {
+    const t = (y - HORIZON_Y) / (SAND_Y - HORIZON_Y);
+    const reflWidth = Math.max(2, Math.floor(14 * (1 - t * 0.7)));
+    const cx = sunCx;
+    for (let dx = -reflWidth; dx <= reflWidth; dx++) {
+      // Flickering effect (seeded by position)
+      const seed = (y * 31 + dx * 17) % 7;
+      if (seed < 3) {
+        const alpha = 0.08 + 0.12 * (1 - t) * (1 - Math.abs(dx) / reflWidth);
+        const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+        const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+        s.fillStyle = `rgba(255, 220, 120, ${alpha})`;
+        s.fillRect(ox + (cx + dx) * PIXEL_SIZE, oy + y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+      }
+    }
+  }
+
+  // --- Static wave lines (horizontal darker bands across the sea) ---
+  for (let i = 0; i < 8; i++) {
+    const wy = HORIZON_Y + 5 + i * 8;
+    if (wy >= SAND_Y) break;
+    for (let x = 0; x < COLS; x++) {
+      const wave = Math.sin(x * 0.08 + i * 1.5) * 0.5 + 0.5;
+      if (wave > 0.6) {
+        const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+        const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+        const alpha = (wave - 0.6) * 0.4;
+        s.fillStyle = `rgba(180, 220, 255, ${alpha})`;
+        s.fillRect(ox + x * PIXEL_SIZE, oy + wy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+      }
+    }
+  }
+
+  // --- Sand / Beach ---
+  for (let y = SAND_Y; y < ROWS; y++) {
+    const t = (y - SAND_Y) / (ROWS - SAND_Y);
+    const color = lerpColor(PAL.sandLight, PAL.sandDark, t);
+    drawRect(s, 0, y, COLS, 1, color);
+  }
+  // Wet sand at waterline
+  drawRect(s, 0, SAND_Y, COLS, 2, PAL.sandWet);
+
+  // Sand texture (scattered darker pixels)
+  for (let i = 0; i < 60; i++) {
+    const sx = Math.floor(Math.random() * COLS);
+    const sy = SAND_Y + 2 + Math.floor(Math.random() * (ROWS - SAND_Y - 2));
+    drawPixel(s, sx, sy, PAL.sandMid);
+  }
+
+  // --- Small rocks on beach ---
+  const rocks = [
+    { x: 20, y: SAND_Y + 3 },
+    { x: 45, y: SAND_Y + 5 },
+    { x: 130, y: SAND_Y + 4 },
+    { x: 100, y: SAND_Y + 6 },
+  ];
+  for (const r of rocks) {
+    drawPixel(s, r.x, r.y, '#555050');
+    drawPixel(s, r.x + 1, r.y, '#666058');
+    drawPixel(s, r.x, r.y - 1, '#777068');
+  }
+}
+
+// ============================================================
+// WAVE PARTICLES
+// ============================================================
+let waveParticles = [];
+let waveCount = 50;
+let waveIntensity = 1.0;
+
+function createWaveParticle(randomX = false) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+
+  // Spread across the sea surface
+  const seaTop = HORIZON_Y + 2;
+  const seaBottom = SAND_Y - 2;
+  const yGrid = seaTop + Math.random() * (seaBottom - seaTop);
+
+  // Depth factor: particles closer to horizon are slower and smaller
+  const depthT = (yGrid - seaTop) / (seaBottom - seaTop); // 0=far, 1=near
+
+  const xGrid = randomX
+    ? Math.random() * COLS
+    : -2 - Math.random() * 10; // Start from left edge
+
+  return {
+    x: ox + xGrid * PIXEL_SIZE,
+    y: oy + yGrid * PIXEL_SIZE,
+    // Horizontal flow: left to right, faster near viewer
+    vx: (0.3 + depthT * 0.7) * (0.8 + Math.random() * 0.4),
+    // Vertical: periodic bobbing
+    vy: 0,
+    baseY: oy + yGrid * PIXEL_SIZE,
+    life: randomX ? Math.random() : 1.0,
+    size: 1 + depthT * 2 + Math.random(),
+    // Wave bobbing parameters
+    phase: Math.random() * Math.PI * 2,
+    freq: 0.8 + Math.random() * 1.2,
+    amp: (0.3 + depthT * 0.8) * (0.5 + Math.random() * 0.5),
+    // Horizontal sway
+    swayPhase: Math.random() * Math.PI * 2,
+    swayFreq: 0.3 + Math.random() * 0.5,
+    swayAmp: 0.1 + Math.random() * 0.3,
+    depthT: depthT,
+  };
+}
+
+function initWaves() {
+  waveParticles = [];
+  for (let i = 0; i < waveCount; i++) waveParticles.push(createWaveParticle(true));
+}
+initWaves();
+
+function updateWaves(dt, time) {
+  while (waveParticles.length < waveCount) waveParticles.push(createWaveParticle(true));
+  while (waveParticles.length > waveCount) waveParticles.pop();
+
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const rightEdge = ox + COLS * PIXEL_SIZE;
+
+  for (let p of waveParticles) {
+    // Horizontal movement (wave progression)
+    const horizSpeed = p.vx + Math.sin(time * p.swayFreq + p.swayPhase) * p.swayAmp;
+    p.x += horizSpeed * waveIntensity * PIXEL_SIZE * dt * 2;
+
+    // Vertical bobbing
+    p.y = p.baseY + Math.sin(time * p.freq + p.phase) * p.amp * PIXEL_SIZE * 3 * waveIntensity;
+    p.vy = Math.cos(time * p.freq + p.phase) * p.amp * p.freq * waveIntensity;
+
+    // Life slowly decreases
+    p.life -= dt * 0.08;
+
+    // Reset when going off right edge or life runs out
+    if (p.x > rightEdge + 10 * PIXEL_SIZE || p.life <= 0) {
+      Object.assign(p, createWaveParticle(false));
+    }
+  }
+}
+
+function drawWaves(time) {
+  for (let p of waveParticles) {
+    // Whitecap/foam: more opaque when particle is near crest (high position)
+    const crestFactor = Math.max(0, (p.baseY - p.y) / (p.amp * PIXEL_SIZE * 3 * waveIntensity + 0.01));
+    const alpha = Math.max(0, p.life * (0.15 + crestFactor * 0.35));
+
+    const sz = p.size * PIXEL_SIZE * (0.8 + crestFactor * 0.4);
+    const snapX = Math.round(p.x / PIXEL_SIZE) * PIXEL_SIZE;
+    const snapY = Math.round(p.y / PIXEL_SIZE) * PIXEL_SIZE;
+
+    // Brighter when at crest
+    if (crestFactor > 0.5) {
+      ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    } else {
+      ctx.fillStyle = `rgba(200,230,255,${alpha * 0.7})`;
+    }
+
+    const pxW = Math.ceil(sz / PIXEL_SIZE) * PIXEL_SIZE;
+    const pxH = Math.ceil(sz * 0.5 / PIXEL_SIZE) * PIXEL_SIZE || PIXEL_SIZE;
+    ctx.fillRect(snapX, snapY, pxW, pxH);
+  }
+}
+
+// ============================================================
+// ANIMATED WAVE OVERLAY (sinusoidal bands moving across sea)
+// ============================================================
+function drawAnimatedWaves(time) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+
+  // Multiple wave layers
+  const layers = [
+    { yBase: HORIZON_Y + 4,  speed: 0.5,  freq: 0.06, amp: 1.0, alpha: 0.08 },
+    { yBase: HORIZON_Y + 15, speed: 0.7,  freq: 0.08, amp: 1.5, alpha: 0.10 },
+    { yBase: HORIZON_Y + 28, speed: 0.9,  freq: 0.10, amp: 2.0, alpha: 0.12 },
+    { yBase: HORIZON_Y + 42, speed: 1.2,  freq: 0.12, amp: 2.5, alpha: 0.14 },
+    { yBase: HORIZON_Y + 55, speed: 1.5,  freq: 0.14, amp: 3.0, alpha: 0.16 },
+  ];
+
+  for (const layer of layers) {
+    if (layer.yBase >= SAND_Y) continue;
+    for (let x = 0; x < COLS; x++) {
+      const waveOffset = Math.sin(x * layer.freq - time * layer.speed) * layer.amp;
+      const gy = Math.round(layer.yBase + waveOffset);
+      if (gy >= HORIZON_Y && gy < SAND_Y) {
+        // Whitecap highlight
+        ctx.fillStyle = `rgba(200, 230, 255, ${layer.alpha})`;
+        ctx.fillRect(ox + x * PIXEL_SIZE, oy + gy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+        // Darker trough below
+        if (gy + 1 < SAND_Y) {
+          ctx.fillStyle = `rgba(0, 20, 60, ${layer.alpha * 0.5})`;
+          ctx.fillRect(ox + x * PIXEL_SIZE, oy + (gy + 1) * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+        }
+      }
+    }
+  }
+}
+
+// ============================================================
+// VELOCITY LOOKUP (particle-based)
+// ============================================================
+let currentTime = 0;
+
+function getWaveVelocityAt(sx, sy) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+
+  // Sea zone
+  const zoneLeft   = ox;
+  const zoneRight  = ox + COLS * PIXEL_SIZE;
+  const zoneTop    = oy + HORIZON_Y * PIXEL_SIZE;
+  const zoneBottom = oy + SAND_Y * PIXEL_SIZE;
+
+  if (sx < zoneLeft || sx > zoneRight || sy < zoneTop || sy > zoneBottom) {
+    return { vx: 0, vy: 0, inZone: false };
+  }
+
+  let totalVx = 0, totalVy = 0, weight = 0;
+  const radius = 20 * PIXEL_SIZE;
+
+  for (let p of waveParticles) {
+    const dist = Math.sqrt((p.x - sx) ** 2 + (p.y - sy) ** 2);
+    if (dist < radius) {
+      const w = (1 - dist / radius) * p.life;
+      // Instantaneous horizontal velocity
+      const instVx = (p.vx + Math.sin(currentTime * p.swayFreq + p.swayPhase) * p.swayAmp) * waveIntensity;
+      // Instantaneous vertical velocity (bobbing derivative)
+      const instVy = p.vy;
+      totalVx += instVx * w;
+      totalVy += instVy * w;
+      weight += w;
+    }
+  }
+
+  if (weight > 0.01) {
+    return {
+      vx: (totalVx / weight) * PIXEL_SIZE,
+      vy: (totalVy / weight) * PIXEL_SIZE,
+      inZone: true,
+    };
+  }
+  // Fallback: gentle rightward drift + slight bobbing
+  return { vx: 0.5 * PIXEL_SIZE * waveIntensity, vy: 0, inZone: true };
+}
+
+// ============================================================
+// PSEUDO-HAPTIC CURSOR
+// ============================================================
+let mouseX = 0, mouseY = 0;
+let prevMouseX = 0, prevMouseY = 0;
+let mouseInited = false;
+let cursorX = 0, cursorY = 0;
+let gain = 0.3;
+let effectEnabled = true;
+let showTrail = false;
+let showDispLine = true;
+let showFlowField = false;
+let cursorTrail = [];
+
+document.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (!mouseInited) {
+    prevMouseX = mouseX;
+    prevMouseY = mouseY;
+    cursorX = mouseX;
+    cursorY = mouseY;
+    mouseInited = true;
+  }
+});
+
+function updateCursor(dt, time) {
+  const dmx = mouseX - prevMouseX;
+  const dmy = mouseY - prevMouseY;
+  prevMouseX = mouseX;
+  prevMouseY = mouseY;
+
+  if (!effectEnabled) {
+    cursorX = mouseX;
+    cursorY = mouseY;
+    return;
+  }
+
+  const wave = getWaveVelocityAt(cursorX, cursorY);
+
+  if (wave.inZone) {
+    cursorX += dmx + wave.vx * gain * dt * 30;
+    cursorY += dmy + wave.vy * gain * dt * 30;
+  } else {
+    cursorX += dmx;
+    cursorY += dmy;
+  }
+
+  if (showTrail) {
+    cursorTrail.push({ x: cursorX, y: cursorY, t: 1.0 });
+    if (cursorTrail.length > 30) cursorTrail.shift();
+  }
+}
+
+function drawCursorTrail() {
+  if (!showTrail) return;
+  for (let i = 0; i < cursorTrail.length; i++) {
+    const p = cursorTrail[i];
+    p.t -= 0.03;
+    if (p.t <= 0) { cursorTrail.splice(i, 1); i--; continue; }
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3 * p.t, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(100,200,255,${p.t * 0.5})`;
+    ctx.fill();
+  }
+}
+
+// ============================================================
+// DISPLACEMENT VISUALIZATION
+// ============================================================
+function drawDisplacementLine() {
+  const dx = cursorX - mouseX;
+  const dy = cursorY - mouseY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist > 1 && effectEnabled && showDispLine) {
+    ctx.beginPath();
+    ctx.moveTo(mouseX, mouseY);
+    ctx.lineTo(cursorX, cursorY);
+    ctx.strokeStyle = 'rgba(255,100,100,0.4)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, 3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,100,100,0.5)';
+    ctx.fill();
+  }
+
+  document.getElementById('disp-value').textContent = dist.toFixed(1) + ' px';
+}
+
+// ============================================================
+// VELOCITY FIELD VISUALIZATION
+// ============================================================
+function drawVelocityField() {
+  if (!showFlowField) return;
+
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+  const zoneLeft   = ox;
+  const zoneRight  = ox + COLS * PIXEL_SIZE;
+  const zoneTop    = oy + HORIZON_Y * PIXEL_SIZE;
+  const zoneBottom = oy + SAND_Y * PIXEL_SIZE;
+
+  const step = 5 * PIXEL_SIZE;
+  const arrowScale = 8;
+  const maxArrowLen = step * 0.9;
+
+  ctx.save();
+  for (let y = zoneTop + step; y <= zoneBottom - step; y += step) {
+    for (let x = zoneLeft + step; x <= zoneRight - step; x += step) {
+      const v = getWaveVelocityAt(x, y);
+      if (!v.inZone) continue;
+
+      const mag = Math.sqrt(v.vx * v.vx + v.vy * v.vy);
+      if (mag < 0.01) continue;
+
+      let len = mag * arrowScale;
+      if (len > maxArrowLen) len = maxArrowLen;
+
+      const nx = v.vx / mag;
+      const ny = v.vy / mag;
+
+      const tx = x + nx * len;
+      const ty = y + ny * len;
+
+      const normMag = Math.min(mag / (3 * PIXEL_SIZE), 1);
+      const hue = (1 - normMag) * 240;
+      const alpha = 0.4 + normMag * 0.4;
+
+      ctx.strokeStyle = `hsla(${hue}, 90%, 60%, ${alpha})`;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.lineWidth = 1.5;
+
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+
+      const headLen = Math.max(3, len * 0.3);
+      const angle = Math.atan2(ny, nx);
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(tx - headLen * Math.cos(angle - 0.4), ty - headLen * Math.sin(angle - 0.4));
+      ctx.lineTo(tx - headLen * Math.cos(angle + 0.4), ty - headLen * Math.sin(angle + 0.4));
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+// ============================================================
+// UI CONTROLS
+// ============================================================
+document.getElementById('gain-slider').addEventListener('input', function() {
+  gain = parseFloat(this.value);
+  document.getElementById('gain-val').textContent = gain.toFixed(1);
+});
+document.getElementById('wave-slider').addEventListener('input', function() {
+  waveIntensity = parseFloat(this.value);
+  document.getElementById('wave-val').textContent = waveIntensity.toFixed(1);
+});
+document.getElementById('count-slider').addEventListener('input', function() {
+  waveCount = parseInt(this.value);
+  document.getElementById('count-val').textContent = waveCount;
+});
+document.getElementById('toggle-effect').addEventListener('change', function() {
+  effectEnabled = this.checked;
+});
+document.getElementById('toggle-trail').addEventListener('change', function() {
+  showTrail = this.checked;
+  if (!showTrail) cursorTrail = [];
+});
+document.getElementById('toggle-displine').addEventListener('change', function() {
+  showDispLine = this.checked;
+});
+document.getElementById('toggle-flowfield').addEventListener('change', function() {
+  showFlowField = this.checked;
+});
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+let lastTime = 0;
+
+function loop(timestamp) {
+  const time = timestamp / 1000;
+  const dt = Math.min(time - lastTime, 0.05);
+  lastTime = time;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(sceneCanvas, 0, 0);
+
+  currentTime = time;
+  drawAnimatedWaves(time);
+  updateWaves(dt, time);
+  drawWaves(time);
+  drawVelocityField();
+  updateCursor(dt, time);
+  drawDisplacementLine();
+  drawCursorTrail();
+
+  cursorEl.style.left = (cursorX - 2) + 'px';
+  cursorEl.style.top = (cursorY - 2) + 'px';
+
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', () => {
+  resize();
+  buildScene();
+  initWaves();
+});
+
+buildScene();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

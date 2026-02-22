@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pseudo-Haptic Pixel Art — Volcanic Wasteland</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#0a0808;overflow:hidden;font-family:'Courier New',monospace;cursor:none;}
+  canvas{display:block;image-rendering:pixelated;}
+  /* Custom cursor SVG overlay */
+  #custom-cursor{position:fixed;top:0;left:0;pointer-events:none;z-index:1000;width:28px;height:28px;transform:translate(-14px,-14px);}
+  /* Controls panel */
+  #controls{position:fixed;top:12px;right:12px;background:rgba(10,8,8,0.92);border:1px solid #884422;border-radius:8px;padding:14px 16px;z-index:900;min-width:240px;color:#a08060;font-size:12px;user-select:none;}
+  #controls h3{color:#884422;font-size:13px;margin-bottom:10px;letter-spacing:1px;border-bottom:1px solid #88442255;padding-bottom:6px;}
+  .ctrl-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .ctrl-row label{flex:1;color:#907060;}
+  .ctrl-row input[type=range]{width:100px;accent-color:#884422;}
+  .ctrl-row span.val{width:36px;text-align:right;color:#884422;font-weight:bold;font-size:11px;}
+  .ctrl-toggle{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+  .ctrl-toggle input[type=checkbox]{accent-color:#884422;width:14px;height:14px;}
+  .ctrl-toggle label{color:#907060;font-size:12px;}
+  /* Displacement indicator */
+  #displacement-indicator{position:fixed;bottom:16px;right:16px;background:rgba(10,8,8,0.88);border:1px solid #88442288;border-radius:6px;padding:8px 14px;z-index:900;color:#884422;font-size:11px;font-family:'Courier New',monospace;pointer-events:none;}
+  /* Info badge */
+  #info-badge{position:fixed;bottom:16px;left:16px;background:rgba(10,8,8,0.90);border:1px solid #88442255;border-radius:8px;padding:12px 16px;z-index:900;max-width:420px;pointer-events:none;}
+  #info-badge .title{color:#884422;font-size:13px;font-weight:bold;margin-bottom:4px;letter-spacing:0.5px;}
+  #info-badge .desc{color:#a08060;font-size:12px;line-height:1.5;margin-bottom:4px;}
+  #info-badge .subtle{color:#806040;font-size:10px;line-height:1.4;opacity:0.8;}
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<!-- Custom cursor SVG -->
+<svg id="custom-cursor" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="14" cy="14" r="10" fill="none" stroke="#884422" stroke-width="2" opacity="0.9"/>
+  <circle cx="14" cy="14" r="3" fill="#884422" opacity="0.8"/>
+  <line x1="14" y1="2" x2="14" y2="8" stroke="#884422" stroke-width="1.2" opacity="0.6"/>
+  <line x1="14" y1="20" x2="14" y2="26" stroke="#884422" stroke-width="1.2" opacity="0.6"/>
+  <line x1="2" y1="14" x2="8" y2="14" stroke="#884422" stroke-width="1.2" opacity="0.6"/>
+  <line x1="20" y1="14" x2="26" y2="14" stroke="#884422" stroke-width="1.2" opacity="0.6"/>
+</svg>
+
+<!-- Controls panel -->
+<div id="controls">
+  <h3>VOLCANO CONTROLS</h3>
+  <div class="ctrl-row">
+    <label>Gain</label>
+    <input type="range" id="gainSlider" min="0" max="5" step="0.1" value="1.5">
+    <span class="val" id="gainVal">1.5</span>
+  </div>
+  <div class="ctrl-row">
+    <label>Lava intensity</label>
+    <input type="range" id="intensitySlider" min="0.1" max="3" step="0.1" value="1.0">
+    <span class="val" id="intensityVal">1.0</span>
+  </div>
+  <div class="ctrl-row">
+    <label>Lava particle count</label>
+    <input type="range" id="countSlider" min="50" max="600" step="10" value="300">
+    <span class="val" id="countVal">300</span>
+  </div>
+  <hr style="border-color:#88442230;margin:8px 0;">
+  <div class="ctrl-toggle">
+    <input type="checkbox" id="toggleEffect" checked>
+    <label for="toggleEffect">Pseudo-haptic effect</label>
+  </div>
+  <div class="ctrl-toggle">
+    <input type="checkbox" id="toggleTrail" checked>
+    <label for="toggleTrail">Cursor trail</label>
+  </div>
+  <div class="ctrl-toggle">
+    <input type="checkbox" id="toggleDisplacement" checked>
+    <label for="toggleDisplacement">Displacement line</label>
+  </div>
+  <div class="ctrl-toggle">
+    <input type="checkbox" id="toggleVelocityField">
+    <label for="toggleVelocityField">Velocity field</label>
+  </div>
+</div>
+
+<!-- Displacement indicator -->
+<div id="displacement-indicator">
+  Displacement: <span id="dispValue">0.0</span> px | Zone: <span id="zoneValue">---</span>
+</div>
+
+<!-- Info badge -->
+<div id="info-badge">
+  <div class="title">Pseudo-Haptic Pixel Art Demo &mdash; Volcanic Wasteland</div>
+  <div class="desc">灰に覆われた大地でカーソルを溶岩の上に置くと、最後の熱に引きずり込まれます。</div>
+  <div class="subtle">パーティクルシステムで溶岩を生成し、視覚的カーソル変位で疑似力覚を提示</div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const PIXEL_SIZE = 6;
+const SCENE_W = 160;
+const SCENE_H = 120;
+let gain = 1.5;
+let intensity = 1.0;
+let particleCount = 300;
+let effectEnabled = true;
+let trailEnabled = true;
+let displacementLineEnabled = true;
+let velocityFieldEnabled = false;
+
+// ============================================================
+// PALETTE — Post-Apocalyptic Volcanic Wasteland
+// ============================================================
+const PAL = {
+  // Sky — oppressive, ash-choked
+  skyTop:       '#0a0808',
+  skyMid:       '#100c0a',
+  skyBot:       '#1a1410',
+  skyGlow:      '#2a1a10',
+  ashCloud1:    '#1a1412',
+  ashCloud2:    '#221a16',
+  ashCloud3:    '#0e0a08',
+  ashCloud4:    '#181210',
+  // Volcano body — darker silhouette
+  mtnDark:      '#0c0a08',
+  mtnMid:       '#141010',
+  mtnLight:     '#1e1812',
+  mtnHighlight: '#2a2018',
+  // Lava — dying embers, muted
+  lavaHot:      '#883310',
+  lavaBright:   '#772a0c',
+  lavaMid:      '#661e08',
+  lavaDark:     '#441008',
+  lavaCool:     '#330c04',
+  lavaGlow:     '#884422',
+  // Crater — dimmer
+  craterDark:   '#0a0606',
+  craterGlow:   '#772200',
+  craterYellow: '#993a10',
+  // Ground — dark volcanic rock
+  groundDark:   '#080604',
+  groundMid:    '#0e0a08',
+  groundLight:  '#14100c',
+  // Embers — muted
+  ember1:       '#994420',
+  ember2:       '#773310',
+  ember3:       '#662808',
+  // Lava pool — dim, cooling
+  poolCenter:   '#773310',
+  poolEdge:     '#552208',
+  poolDark:     '#331006',
+  // Ash
+  ash:          '#302a24',
+  // Ruins
+  ruinDark:     '#1a1614',
+  ruinMid:      '#222018',
+  ruinLight:    '#2a2620',
+  ruinAsh:      '#1e1c18',
+  // Dead tree
+  treeDark:     '#0e0c08',
+  treeMid:      '#161210',
+};
+
+// ============================================================
+// CANVAS SETUP
+// ============================================================
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Offscreen scene buffer
+const sceneCanvas = document.createElement('canvas');
+sceneCanvas.width = SCENE_W * PIXEL_SIZE;
+sceneCanvas.height = SCENE_H * PIXEL_SIZE;
+const sceneCtx = sceneCanvas.getContext('2d');
+
+// ============================================================
+// PIXEL ART SCENE — buildScene
+// ============================================================
+function drawPixel(ctx, x, y, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x * PIXEL_SIZE, y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+}
+
+function drawRect(ctx, x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x * PIXEL_SIZE, y * PIXEL_SIZE, w * PIXEL_SIZE, h * PIXEL_SIZE);
+}
+
+// Seeded pseudo-random for consistent scene
+let _seed = 42;
+function srand(s) { _seed = s; }
+function rand() { _seed = (_seed * 16807 + 0) % 2147483647; return (_seed & 0x7fffffff) / 0x7fffffff; }
+
+// Lava zone map (used for velocity field)
+const lavaZone = new Uint8Array(SCENE_W * SCENE_H);
+
+// Ground fissure map for ember glow
+const fissureMap = [];
+
+function buildScene() {
+  const c = sceneCtx;
+  srand(42);
+
+  // Clear
+  c.clearRect(0, 0, sceneCanvas.width, sceneCanvas.height);
+
+  // --- Sky gradient (rows 0 to ~50) — oppressive ash-choked sky ---
+  for (let y = 0; y < 50; y++) {
+    let color;
+    if (y < 8) color = PAL.skyTop;
+    else if (y < 16) color = '#0c0908';
+    else if (y < 24) color = PAL.skyMid;
+    else if (y < 34) color = '#151010';
+    else if (y < 42) color = PAL.skyBot;
+    else color = PAL.skyGlow;
+    drawRect(c, 0, y, SCENE_W, 1, color);
+  }
+
+  // Heavy ash clouds — oppressive layered clouds
+  for (let i = 0; i < 200; i++) {
+    const cx = Math.floor(rand() * SCENE_W);
+    const cy = Math.floor(rand() * 45);
+    const w = Math.floor(rand() * 16) + 4;
+    const h = Math.floor(rand() * 3) + 1;
+    const col = [PAL.ashCloud1, PAL.ashCloud2, PAL.ashCloud3, PAL.ashCloud4][Math.floor(rand() * 4)];
+    for (let dx = 0; dx < w; dx++) {
+      for (let dy = 0; dy < h; dy++) {
+        if (rand() > 0.3) {
+          const px = cx + dx;
+          const py = cy + dy;
+          if (px >= 0 && px < SCENE_W && py >= 0 && py < 50) {
+            drawPixel(c, px, py, col);
+          }
+        }
+      }
+    }
+  }
+
+  // Additional thick cloud bands at mid-sky
+  for (let band = 0; band < 5; band++) {
+    const bandY = 10 + Math.floor(rand() * 25);
+    for (let x = 0; x < SCENE_W; x++) {
+      if (rand() > 0.35) {
+        const shade = 12 + Math.floor(rand() * 10);
+        drawPixel(c, x, bandY, `rgb(${shade},${Math.floor(shade*0.85)},${Math.floor(shade*0.7)})`);
+      }
+      if (rand() > 0.5) {
+        const shade = 10 + Math.floor(rand() * 8);
+        drawPixel(c, x, bandY + 1, `rgb(${shade},${Math.floor(shade*0.85)},${Math.floor(shade*0.7)})`);
+      }
+    }
+  }
+
+  // Very faint, dull smoke glow near top-center (volcano smoke plume)
+  for (let i = 0; i < 40; i++) {
+    const px = 80 + Math.floor((rand() - 0.5) * 30);
+    const py = 15 + Math.floor(rand() * 20);
+    if (py < 50) {
+      const r = 30 + Math.floor(rand() * 20);
+      const g = 15 + Math.floor(rand() * 10);
+      const b = 8 + Math.floor(rand() * 8);
+      drawPixel(c, px, py, `rgba(${r},${g},${b},0.25)`);
+    }
+  }
+
+  // --- Volcano mountain shape (darker, more silhouette) ---
+  const peakX = 80;
+  const peakY = 32;
+  const baseY = 100;
+  const baseHalfW = 65;
+
+  function mountainEdge(y) {
+    if (y <= peakY) return { left: peakX - 4, right: peakX + 4 };
+    const t = (y - peakY) / (baseY - peakY);
+    const halfW = 4 + t * baseHalfW;
+    const noiseL = Math.sin(y * 0.8) * 2 + Math.sin(y * 2.1) * 1;
+    const noiseR = Math.sin(y * 0.7 + 1) * 2 + Math.sin(y * 1.9) * 1;
+    return {
+      left: Math.floor(peakX - halfW + noiseL),
+      right: Math.floor(peakX + halfW + noiseR)
+    };
+  }
+
+  // Draw mountain fill — darker, more uniform silhouette
+  for (let y = peakY; y <= baseY; y++) {
+    const { left, right } = mountainEdge(y);
+    for (let x = Math.max(0, left); x <= Math.min(SCENE_W - 1, right); x++) {
+      const t = (y - peakY) / (baseY - peakY);
+      const fromCenter = Math.abs(x - peakX) / (right - left + 1);
+      let color;
+      if (rand() < 0.08) {
+        color = PAL.mtnLight;
+      } else if (x < peakX && rand() < 0.15) {
+        color = PAL.mtnMid;
+      } else {
+        color = PAL.mtnDark;
+      }
+      drawPixel(c, x, y, color);
+    }
+  }
+
+  // Mountain texture — very subtle
+  for (let i = 0; i < 200; i++) {
+    const y = peakY + Math.floor(rand() * (baseY - peakY));
+    const { left, right } = mountainEdge(y);
+    const x = left + Math.floor(rand() * (right - left));
+    if (x >= 0 && x < SCENE_W) {
+      const shade = Math.floor(rand() * 16) + 8;
+      drawPixel(c, x, y, `rgb(${shade},${Math.floor(shade*0.8)},${Math.floor(shade*0.6)})`);
+    }
+  }
+
+  // --- Crater at top (dimmer glow) ---
+  const craterY = peakY;
+  const craterLeft = peakX - 5;
+  const craterRight = peakX + 5;
+  for (let x = craterLeft; x <= craterRight; x++) {
+    drawPixel(c, x, craterY, PAL.craterDark);
+    drawPixel(c, x, craterY + 1, PAL.craterDark);
+    if (x >= craterLeft + 1 && x <= craterRight - 1) {
+      drawPixel(c, x, craterY, PAL.craterGlow);
+      if (rand() > 0.6) drawPixel(c, x, craterY - 1, PAL.craterYellow);
+    }
+  }
+  // Crater rim — dark
+  for (let x = craterLeft - 1; x <= craterRight + 1; x++) {
+    if (rand() > 0.5) drawPixel(c, x, craterY - 1, PAL.mtnHighlight);
+  }
+  // Dim glow inside crater
+  for (let dy = 0; dy < 3; dy++) {
+    for (let x = craterLeft + 1; x <= craterRight - 1; x++) {
+      const rr = 120 + Math.floor(rand() * 40);
+      const gg = 30 + Math.floor(rand() * 25);
+      const bb = 5 + Math.floor(rand() * 10);
+      drawPixel(c, x, craterY + dy, `rgba(${rr},${gg},${bb},0.5)`);
+    }
+  }
+
+  // --- Lava rivers (dying embers, dimmer) ---
+  const lavaRivers = [
+    { points: [[80,35],[78,42],[74,50],[70,58],[66,66],[63,74],[60,82],[58,90],[57,98],[56,105],[55,110],[54,115],[54,120]] },
+    { points: [[80,35],[83,42],[87,50],[92,58],[96,66],[100,74],[103,82],[106,90],[108,98],[110,105],[112,110],[113,115],[114,120]] },
+    { points: [[74,50],[68,55],[62,62],[58,70],[55,78],[53,85],[51,92],[50,100],[49,108],[48,115],[48,120]] },
+    { points: [[87,50],[94,56],[100,63],[105,71],[108,78],[110,86],[112,94],[113,102],[114,110],[115,118],[115,120]] },
+    { points: [[80,35],[80,44],[80,52],[79,60],[78,68],[78,76],[77,84],[77,92],[76,100],[76,108],[76,115],[76,120]] },
+  ];
+
+  lavaZone.fill(0);
+
+  for (const river of lavaRivers) {
+    const pts = river.points;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x0, y0] = pts[i];
+      const [x1, y1] = pts[i + 1];
+      const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const px = Math.round(x0 + (x1 - x0) * t);
+        const py = Math.round(y0 + (y1 - y0) * t);
+        const frac = py / 120;
+        const w = Math.floor(1 + frac * 3);
+        for (let dx = -w; dx <= w; dx++) {
+          const xx = px + dx;
+          if (xx >= 0 && xx < SCENE_W && py >= 0 && py < SCENE_H) {
+            const edge = mountainEdge(py);
+            if (py >= peakY && xx >= edge.left && xx <= edge.right) {
+              lavaZone[py * SCENE_W + xx] = 1;
+              const dist = Math.abs(dx);
+              let col;
+              // Dying embers: mostly dark, occasional dull glow at center
+              if (dist === 0) {
+                col = rand() > 0.5 ? PAL.lavaHot : PAL.lavaBright;
+              } else if (dist <= 1) {
+                col = rand() > 0.4 ? PAL.lavaMid : PAL.lavaDark;
+              } else {
+                // Mostly crusted/dark
+                col = rand() > 0.3 ? PAL.lavaDark : PAL.lavaCool;
+              }
+              drawPixel(c, xx, py, col);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // --- Lava pool at base (cooling, dim) ---
+  for (let y = 100; y < SCENE_H; y++) {
+    for (let x = 30; x < 130; x++) {
+      const edge = mountainEdge(y);
+      const onMtn = (y >= peakY && y <= baseY && x >= edge.left && x <= edge.right);
+      if (!onMtn || y > baseY) {
+        const distFromCenter = Math.abs(x - 80) / 50;
+        const distFromTop = (y - 100) / 20;
+        if (distFromCenter + distFromTop * 0.3 < 1.0) {
+          lavaZone[y * SCENE_W + x] = 1;
+          let col;
+          if (distFromCenter < 0.3 && distFromTop < 0.3) {
+            col = rand() > 0.4 ? PAL.poolCenter : PAL.lavaHot;
+          } else if (distFromCenter < 0.6) {
+            col = rand() > 0.4 ? PAL.poolEdge : PAL.lavaDark;
+          } else {
+            col = rand() > 0.5 ? PAL.poolDark : PAL.lavaCool;
+          }
+          drawPixel(c, x, y, col);
+          // Add dark crusted patches over lava
+          if (rand() < 0.2) {
+            drawPixel(c, x, y, PAL.groundDark);
+          }
+        }
+      }
+    }
+  }
+
+  // Mark lava zone around crater
+  for (let y = peakY - 2; y <= peakY + 3; y++) {
+    for (let x = craterLeft - 1; x <= craterRight + 1; x++) {
+      if (x >= 0 && x < SCENE_W && y >= 0 && y < SCENE_H) {
+        lavaZone[y * SCENE_W + x] = 1;
+      }
+    }
+  }
+
+  // --- Ground (dark volcanic rock) ---
+  for (let y = baseY + 1; y < SCENE_H; y++) {
+    for (let x = 0; x < SCENE_W; x++) {
+      if (lavaZone[y * SCENE_W + x]) continue;
+      const edge = mountainEdge(Math.min(y, baseY));
+      if (y <= baseY && x >= edge.left && x <= edge.right) continue;
+      let col;
+      const n = rand();
+      if (n < 0.55) col = PAL.groundDark;
+      else if (n < 0.85) col = PAL.groundMid;
+      else col = PAL.groundLight;
+      drawPixel(c, x, y, col);
+    }
+  }
+
+  // Fill ground area on sides
+  for (let y = 85; y <= baseY; y++) {
+    const edge = mountainEdge(y);
+    for (let x = 0; x < edge.left; x++) {
+      if (!lavaZone[y * SCENE_W + x]) {
+        const col = rand() < 0.65 ? PAL.groundDark : PAL.groundMid;
+        drawPixel(c, x, y, col);
+      }
+    }
+    for (let x = edge.right + 1; x < SCENE_W; x++) {
+      if (!lavaZone[y * SCENE_W + x]) {
+        const col = rand() < 0.65 ? PAL.groundDark : PAL.groundMid;
+        drawPixel(c, x, y, col);
+      }
+    }
+  }
+
+  // Fill sky sides
+  for (let y = 50; y < 85; y++) {
+    const edge = mountainEdge(y);
+    for (let x = 0; x < Math.max(0, edge.left); x++) {
+      if (!lavaZone[y * SCENE_W + x]) {
+        drawPixel(c, x, y, PAL.skyGlow);
+      }
+    }
+    for (let x = Math.min(SCENE_W, edge.right + 1); x < SCENE_W; x++) {
+      if (!lavaZone[y * SCENE_W + x]) {
+        drawPixel(c, x, y, PAL.skyGlow);
+      }
+    }
+  }
+
+  // --- RUINS: Broken stone columns (left foreground) ---
+  // Column 1: tall broken column, left side
+  const col1X = 22, col1BaseY = 108;
+  for (let dy = 0; dy < 12; dy++) {
+    const y = col1BaseY - dy;
+    if (y >= 0 && y < SCENE_H) {
+      drawPixel(c, col1X, y, PAL.ruinMid);
+      drawPixel(c, col1X + 1, y, PAL.ruinDark);
+      if (dy < 2) { // base wider
+        drawPixel(c, col1X - 1, y, PAL.ruinDark);
+        drawPixel(c, col1X + 2, y, PAL.ruinDark);
+      }
+    }
+  }
+  // Broken top — jagged
+  drawPixel(c, col1X, col1BaseY - 12, PAL.ruinLight);
+  drawPixel(c, col1X + 1, col1BaseY - 11, PAL.ruinLight);
+  // Ash covering base
+  for (let dx = -1; dx <= 3; dx++) {
+    if (rand() > 0.3) drawPixel(c, col1X + dx, col1BaseY + 1, PAL.ruinAsh);
+  }
+
+  // Column 2: shorter broken column
+  const col2X = 28, col2BaseY = 107;
+  for (let dy = 0; dy < 7; dy++) {
+    const y = col2BaseY - dy;
+    if (y >= 0 && y < SCENE_H) {
+      drawPixel(c, col2X, y, PAL.ruinDark);
+      drawPixel(c, col2X + 1, y, PAL.ruinMid);
+    }
+  }
+  drawPixel(c, col2X, col2BaseY - 7, PAL.ruinLight);
+  // Ash
+  drawPixel(c, col2X - 1, col2BaseY + 1, PAL.ruinAsh);
+  drawPixel(c, col2X, col2BaseY + 1, PAL.ruinAsh);
+  drawPixel(c, col2X + 1, col2BaseY + 1, PAL.ruinAsh);
+  drawPixel(c, col2X + 2, col2BaseY + 1, PAL.ruinAsh);
+
+  // Column 3: tiny stump, right side
+  const col3X = 138, col3BaseY = 109;
+  for (let dy = 0; dy < 5; dy++) {
+    const y = col3BaseY - dy;
+    if (y >= 0 && y < SCENE_H) {
+      drawPixel(c, col3X, y, PAL.ruinMid);
+      drawPixel(c, col3X + 1, y, PAL.ruinDark);
+    }
+  }
+  drawPixel(c, col3X - 1, col3BaseY, PAL.ruinAsh);
+  drawPixel(c, col3X + 2, col3BaseY, PAL.ruinAsh);
+
+  // --- RUINS: Half-buried stone arch/gate (right foreground) ---
+  const archX = 130, archBaseY = 112;
+  // Left pillar
+  for (let dy = 0; dy < 9; dy++) {
+    const y = archBaseY - dy;
+    if (y >= 0 && y < SCENE_H) {
+      drawPixel(c, archX, y, PAL.ruinMid);
+      drawPixel(c, archX + 1, y, dy < 3 ? PAL.ruinDark : PAL.ruinMid);
+    }
+  }
+  // Right pillar (shorter, partially collapsed)
+  for (let dy = 0; dy < 6; dy++) {
+    const y = archBaseY - dy;
+    if (y >= 0 && y < SCENE_H) {
+      drawPixel(c, archX + 7, y, PAL.ruinDark);
+      drawPixel(c, archX + 8, y, PAL.ruinMid);
+    }
+  }
+  // Arch top (broken, only partial)
+  for (let dx = 1; dx <= 6; dx++) {
+    const archTopY = archBaseY - 9 + Math.floor(Math.abs(dx - 3.5) * 0.5);
+    if (archTopY >= 0 && archTopY < SCENE_H && archX + dx < SCENE_W) {
+      if (dx < 5) { // broken — doesn't fully connect
+        drawPixel(c, archX + dx, archTopY, PAL.ruinLight);
+      }
+    }
+  }
+  // Fallen stones near arch
+  drawPixel(c, archX + 5, archBaseY - 2, PAL.ruinDark);
+  drawPixel(c, archX + 6, archBaseY - 1, PAL.ruinDark);
+  drawPixel(c, archX + 6, archBaseY, PAL.ruinMid);
+  // Ash covering
+  for (let dx = -1; dx <= 9; dx++) {
+    if (rand() > 0.4 && archX + dx >= 0 && archX + dx < SCENE_W) {
+      drawPixel(c, archX + dx, archBaseY + 1, PAL.ruinAsh);
+    }
+  }
+
+  // --- Scattered debris (dark rectangular rubble) ---
+  const debrisPositions = [
+    [18, 112, 2, 1], [20, 113, 1, 1], [35, 110, 3, 1], [36, 111, 1, 1],
+    [140, 111, 2, 1], [143, 112, 1, 1], [145, 110, 2, 1],
+    [25, 114, 2, 1], [15, 115, 1, 1], [148, 113, 2, 1],
+    [10, 110, 1, 1], [12, 111, 2, 1],
+  ];
+  for (const [dx, dy, dw, dh] of debrisPositions) {
+    if (dx >= 0 && dx + dw < SCENE_W && dy >= 0 && dy + dh < SCENE_H) {
+      for (let rx = 0; rx < dw; rx++) {
+        for (let ry = 0; ry < dh; ry++) {
+          if (!lavaZone[(dy + ry) * SCENE_W + (dx + rx)]) {
+            drawPixel(c, dx + rx, dy + ry, rand() > 0.5 ? PAL.ruinDark : PAL.ruinMid);
+          }
+        }
+      }
+    }
+  }
+
+  // --- Charred dead tree (skeletal silhouette, left midground) ---
+  const treeX = 12, treeBaseY = 100;
+  // Trunk
+  for (let dy = 0; dy < 16; dy++) {
+    const y = treeBaseY - dy;
+    if (y >= 0 && y < SCENE_H) {
+      drawPixel(c, treeX, y, PAL.treeDark);
+      if (dy < 4) drawPixel(c, treeX + 1, y, PAL.treeDark); // thicker base
+    }
+  }
+  // Branch 1 — right, going up-right
+  drawPixel(c, treeX + 1, treeBaseY - 12, PAL.treeDark);
+  drawPixel(c, treeX + 2, treeBaseY - 13, PAL.treeDark);
+  drawPixel(c, treeX + 3, treeBaseY - 14, PAL.treeMid);
+  drawPixel(c, treeX + 4, treeBaseY - 14, PAL.treeMid);
+  // Branch 2 — left, going up-left
+  drawPixel(c, treeX - 1, treeBaseY - 10, PAL.treeDark);
+  drawPixel(c, treeX - 2, treeBaseY - 11, PAL.treeDark);
+  drawPixel(c, treeX - 3, treeBaseY - 11, PAL.treeMid);
+  // Branch 3 — small right branch lower
+  drawPixel(c, treeX + 1, treeBaseY - 8, PAL.treeDark);
+  drawPixel(c, treeX + 2, treeBaseY - 9, PAL.treeMid);
+  // Branch 4 — small left twig higher up
+  drawPixel(c, treeX - 1, treeBaseY - 14, PAL.treeDark);
+  drawPixel(c, treeX - 2, treeBaseY - 15, PAL.treeMid);
+  // Top — broken, jagged
+  drawPixel(c, treeX, treeBaseY - 16, PAL.treeMid);
+
+  // --- Another smaller dead tree (right side, far) ---
+  const tree2X = 148, tree2BaseY = 105;
+  for (let dy = 0; dy < 10; dy++) {
+    const y = tree2BaseY - dy;
+    if (y >= 0 && y < SCENE_H) {
+      drawPixel(c, tree2X, y, PAL.treeDark);
+    }
+  }
+  drawPixel(c, tree2X + 1, tree2BaseY - 7, PAL.treeDark);
+  drawPixel(c, tree2X + 2, tree2BaseY - 8, PAL.treeMid);
+  drawPixel(c, tree2X - 1, tree2BaseY - 9, PAL.treeDark);
+  drawPixel(c, tree2X - 2, tree2BaseY - 9, PAL.treeMid);
+
+  // --- Broken monument/statue (center-right foreground) ---
+  const statueX = 40, statueBaseY = 110;
+  // Base pedestal
+  for (let dx = -2; dx <= 2; dx++) {
+    drawPixel(c, statueX + dx, statueBaseY, PAL.ruinMid);
+    drawPixel(c, statueX + dx, statueBaseY + 1, PAL.ruinDark);
+  }
+  // Broken body (tilted, crumbling)
+  drawPixel(c, statueX - 1, statueBaseY - 1, PAL.ruinMid);
+  drawPixel(c, statueX, statueBaseY - 1, PAL.ruinLight);
+  drawPixel(c, statueX + 1, statueBaseY - 1, PAL.ruinMid);
+  drawPixel(c, statueX, statueBaseY - 2, PAL.ruinLight);
+  drawPixel(c, statueX + 1, statueBaseY - 2, PAL.ruinMid);
+  drawPixel(c, statueX, statueBaseY - 3, PAL.ruinMid);
+  // Broken head/top — only a stump
+  drawPixel(c, statueX, statueBaseY - 4, PAL.ruinLight);
+  // Fallen piece nearby
+  drawPixel(c, statueX + 3, statueBaseY, PAL.ruinDark);
+  drawPixel(c, statueX + 4, statueBaseY + 1, PAL.ruinDark);
+  // Ash covering
+  drawPixel(c, statueX - 2, statueBaseY + 2, PAL.ruinAsh);
+  drawPixel(c, statueX - 1, statueBaseY + 2, PAL.ruinAsh);
+  drawPixel(c, statueX, statueBaseY + 2, PAL.ruinAsh);
+
+  // --- Ground fissures (for animated ember glow) ---
+  fissureMap.length = 0;
+  // Fissure 1: across the ground, left
+  const fissure1 = [];
+  let fx = 5, fy = 108;
+  for (let i = 0; i < 20; i++) {
+    fissure1.push([fx, fy]);
+    fx += 1 + Math.floor(rand() * 2);
+    fy += Math.floor(rand() * 2) - (rand() > 0.6 ? 1 : 0);
+    if (fx >= SCENE_W) break;
+  }
+  fissureMap.push(fissure1);
+
+  // Fissure 2: right side
+  const fissure2 = [];
+  fx = 125; fy = 112;
+  for (let i = 0; i < 15; i++) {
+    fissure2.push([fx, fy]);
+    fx += 1 + Math.floor(rand() * 2);
+    fy += Math.floor(rand() * 2) - (rand() > 0.5 ? 1 : 0);
+    if (fx >= SCENE_W) break;
+  }
+  fissureMap.push(fissure2);
+
+  // Fissure 3: center-bottom
+  const fissure3 = [];
+  fx = 60; fy = 115;
+  for (let i = 0; i < 18; i++) {
+    fissure3.push([fx, fy]);
+    fx += 1 + Math.floor(rand() * 2);
+    fy += Math.floor(rand() * 3) - 1;
+    if (fy >= SCENE_H) fy = SCENE_H - 1;
+    if (fx >= SCENE_W) break;
+  }
+  fissureMap.push(fissure3);
+
+  // Draw fissure base (dark lines)
+  for (const fissure of fissureMap) {
+    for (const [fx, fy] of fissure) {
+      if (fx >= 0 && fx < SCENE_W && fy >= 0 && fy < SCENE_H) {
+        drawPixel(c, fx, fy, '#060404');
+      }
+    }
+  }
+
+  // Fewer embers/sparks in scene (muted)
+  for (let i = 0; i < 12; i++) {
+    const px = peakX + Math.floor((rand() - 0.5) * 16);
+    const py = peakY - 3 - Math.floor(rand() * 12);
+    if (px >= 0 && px < SCENE_W && py >= 0 && py < SCENE_H) {
+      const col = [PAL.ember1, PAL.ember2, PAL.ember3][Math.floor(rand() * 3)];
+      drawPixel(c, px, py, col);
+    }
+  }
+
+  // Very faint distant glow on horizon
+  for (let x = 50; x < 110; x++) {
+    for (let y = 48; y < 55; y++) {
+      const dist = Math.abs(x - 80) / 30;
+      if (rand() < (1 - dist) * 0.08) {
+        drawPixel(c, x, y, `rgba(80,25,8,0.1)`);
+      }
+    }
+  }
+
+  // --- Ash overlay on entire ground area ---
+  for (let y = 95; y < SCENE_H; y++) {
+    for (let x = 0; x < SCENE_W; x++) {
+      if (rand() < 0.06 && !lavaZone[y * SCENE_W + x]) {
+        const ashShade = 18 + Math.floor(rand() * 8);
+        drawPixel(c, x, y, `rgba(${ashShade},${ashShade},${Math.floor(ashShade*0.9)},0.4)`);
+      }
+    }
+  }
+}
+
+// ============================================================
+// PARTICLES (Lava / Embers / Ash)
+// ============================================================
+let particles = [];
+
+const CRATER_X = 80 * PIXEL_SIZE;
+const CRATER_Y = 32 * PIXEL_SIZE;
+
+function createParticle(index) {
+  const roll = Math.random();
+  // 15% embers (muted), 40% ash fall, 45% lava flow
+  const isAsh = roll < 0.40;
+  const isEmber = !isAsh && roll < 0.55;
+
+  if (isAsh) {
+    // Dark ash particles falling like heavy snow
+    return {
+      x: Math.random() * SCENE_W * PIXEL_SIZE,
+      y: -Math.random() * 20 * PIXEL_SIZE,
+      vx: (Math.random() - 0.5) * 0.15,
+      vy: 0.15 + Math.random() * 0.35,
+      life: 0.8 + Math.random() * 0.2,
+      maxLife: 1.0,
+      size: 1 + Math.random() * 2.5,
+      type: 'ash',
+      heat: 0,
+      flicker: Math.random() * Math.PI * 2,
+      ashShade: 0.15 + Math.random() * 0.25,
+      drift: Math.random() * Math.PI * 2,
+    };
+  }
+
+  if (isEmber) {
+    return {
+      x: CRATER_X + (Math.random() - 0.5) * 10 * PIXEL_SIZE,
+      y: CRATER_Y - Math.random() * 5 * PIXEL_SIZE,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: -(0.3 + Math.random() * 0.8),
+      life: 0.8 + Math.random() * 0.2,
+      maxLife: 1.0,
+      size: 1 + Math.random() * 1.5,
+      type: 'ember',
+      heat: 0.5 + Math.random() * 0.3,
+      flicker: Math.random() * Math.PI * 2,
+    };
+  }
+
+  // Lava flow particle
+  const riverStartPoints = [
+    [80, 35], [78, 42], [83, 42], [74, 50], [87, 50], [80, 44]
+  ];
+  const startPt = riverStartPoints[Math.floor(Math.random() * riverStartPoints.length)];
+  const startX = (startPt[0] + (Math.random() - 0.5) * 4) * PIXEL_SIZE;
+  const startY = (startPt[1] + Math.random() * 5) * PIXEL_SIZE;
+
+  const fromCenter = startX - CRATER_X;
+  const hDrift = fromCenter * 0.02 + (Math.random() - 0.5) * 0.3;
+
+  return {
+    x: startX,
+    y: startY,
+    vx: hDrift,
+    vy: 0.5 + Math.random() * 0.8,
+    life: 0.9 + Math.random() * 0.1,
+    maxLife: 1.0,
+    size: 2 + Math.random() * 2.5,
+    type: 'lava',
+    heat: 0.6 + Math.random() * 0.2,
+    flicker: Math.random() * Math.PI * 2,
+  };
+}
+
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < particleCount; i++) {
+    const p = createParticle(i);
+    if (p.type === 'lava') {
+      p.y += Math.random() * (SCENE_H * PIXEL_SIZE - p.y);
+      const fromCenter = p.x - CRATER_X;
+      const progress = (p.y - CRATER_Y) / (SCENE_H * PIXEL_SIZE - CRATER_Y);
+      p.x += fromCenter * progress * 0.5;
+    } else if (p.type === 'ember') {
+      p.y -= Math.random() * 15 * PIXEL_SIZE;
+    } else {
+      // Ash: scatter vertically
+      p.y = Math.random() * SCENE_H * PIXEL_SIZE;
+    }
+    p.prevX = p.x;
+    p.prevY = p.y;
+    particles.push(p);
+  }
+}
+
+function updateParticles(dt, time) {
+  const speedMul = intensity;
+
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    p.prevX = p.x;
+    p.prevY = p.y;
+
+    p.flicker += dt * (3 + Math.random() * 4);
+
+    if (p.type === 'ash') {
+      // Ash drifts down slowly with gentle horizontal sway
+      p.drift += dt * 0.5;
+      p.vx = Math.sin(p.drift) * 0.08;
+      p.x += p.vx * dt * 60;
+      p.y += p.vy * speedMul * dt * 60;
+      p.life -= dt * 0.03;
+
+      if (p.life <= 0 || p.y > SCENE_H * PIXEL_SIZE + 10) {
+        Object.assign(p, createParticle(i));
+        p.type = 'ash';
+        p.y = -Math.random() * 10 * PIXEL_SIZE;
+        p.prevX = p.x;
+        p.prevY = p.y;
+      }
+    } else if (p.type === 'ember') {
+      p.vy -= dt * 0.08 * speedMul;
+      p.vx += (Math.random() - 0.5) * dt * 1.5;
+      p.x += p.vx * speedMul * dt * 60;
+      p.y += p.vy * speedMul * dt * 60;
+      p.life -= dt * 0.35;
+      p.heat -= dt * 0.2;
+
+      if (p.life <= 0 || p.y < -10 || p.x < 0 || p.x > SCENE_W * PIXEL_SIZE) {
+        Object.assign(p, createParticle(i));
+        p.type = 'ember';
+        p.prevX = p.x;
+        p.prevY = p.y;
+      }
+    } else {
+      // Lava flows downhill (slower, dying)
+      p.vy += dt * 0.10 * speedMul;
+      const fromCenter = p.x - CRATER_X;
+      p.vx += fromCenter * 0.0002 * speedMul;
+      p.vx *= 0.998;
+
+      p.vx += (Math.random() - 0.5) * dt * 0.4;
+      p.vy += (Math.random() - 0.5) * dt * 0.15;
+
+      if (p.vy > 2) p.vy = 2;
+      if (p.vy < 0.2) p.vy = 0.2;
+
+      p.x += p.vx * speedMul * dt * 60;
+      p.y += p.vy * speedMul * dt * 60;
+
+      const progress = (p.y - CRATER_Y) / (SCENE_H * PIXEL_SIZE - CRATER_Y);
+      p.heat = Math.max(0.05, 0.6 - progress * 0.5);
+      p.life -= dt * 0.06;
+
+      if (p.y > SCENE_H * PIXEL_SIZE + 10 || p.x < 0 || p.x > SCENE_W * PIXEL_SIZE || p.life <= 0) {
+        Object.assign(p, createParticle(i));
+        p.prevX = p.x;
+        p.prevY = p.y;
+      }
+    }
+  }
+
+  while (particles.length < particleCount) {
+    const np = createParticle(particles.length);
+    np.prevX = np.x;
+    np.prevY = np.y;
+    particles.push(np);
+  }
+  while (particles.length > particleCount) {
+    particles.pop();
+  }
+}
+
+function drawParticles(ctx, offsetX, offsetY) {
+  for (const p of particles) {
+    const sx = p.x + offsetX;
+    const sy = p.y + offsetY;
+
+    if (p.type === 'ash') {
+      // Dark gray ash particles
+      const shade = p.ashShade || 0.2;
+      const gray = Math.floor(60 * shade);
+      const a = p.life * 0.5;
+      ctx.fillStyle = `rgba(${gray},${gray},${Math.floor(gray * 0.9)},${a})`;
+      ctx.fillRect(sx - p.size / 2, sy - p.size / 2, p.size, p.size);
+      continue;
+    }
+
+    // Brightness flicker
+    const flick = 0.7 + 0.3 * Math.sin(p.flicker);
+    const h = p.heat * flick;
+
+    let r, g, b, a;
+    if (p.type === 'ember') {
+      // Dimmer embers
+      r = Math.floor(160 * h);
+      g = Math.floor(80 * h * h);
+      b = Math.floor(15 * h);
+      a = p.life * 0.7;
+    } else {
+      // Lava: dying embers palette — dark red to dull orange
+      if (h > 0.5) {
+        r = Math.floor(136 + 50 * (h - 0.5));
+        g = Math.floor(30 + 30 * (h - 0.5));
+        b = Math.floor(8 + 10 * (h - 0.5));
+      } else if (h > 0.25) {
+        r = Math.floor(80 + 56 * (h - 0.25) / 0.25);
+        g = Math.floor(15 + 15 * (h - 0.25) / 0.25);
+        b = Math.floor(4 + 4 * (h - 0.25) / 0.25);
+      } else {
+        r = Math.floor(40 + 40 * h / 0.25);
+        g = Math.floor(8 + 7 * h / 0.25);
+        b = 0;
+      }
+      a = p.life * 0.65;
+    }
+
+    // Dimmer glow
+    const glowSize = p.size * 2;
+    const grd = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowSize);
+    grd.addColorStop(0, `rgba(${r},${g},${b},${a * 0.35})`);
+    grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    ctx.fillStyle = grd;
+    ctx.fillRect(sx - glowSize, sy - glowSize, glowSize * 2, glowSize * 2);
+
+    // Core pixel
+    ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+    ctx.fillRect(sx - p.size / 2, sy - p.size / 2, p.size, p.size);
+  }
+}
+
+// ============================================================
+// VELOCITY LOOKUP (getVelocityAt with particle interpolation)
+// ============================================================
+function getVelocityAt(sx, sy) {
+  // Convert screen position to scene pixel coords
+  const sceneOffsetX = (W - SCENE_W * PIXEL_SIZE) / 2;
+  const sceneOffsetY = (H - SCENE_H * PIXEL_SIZE) / 2;
+  const localX = sx - sceneOffsetX;
+  const localY = sy - sceneOffsetY;
+  const pixX = Math.floor(localX / PIXEL_SIZE);
+  const pixY = Math.floor(localY / PIXEL_SIZE);
+
+  // Check if in scene bounds
+  if (pixX < 0 || pixX >= SCENE_W || pixY < 0 || pixY >= SCENE_H) {
+    return { vx: 0, vy: 0, inZone: false };
+  }
+
+  // Check if in lava zone
+  const inZone = lavaZone[pixY * SCENE_W + pixX] === 1;
+  if (!inZone) {
+    return { vx: 0, vy: 0, inZone: false };
+  }
+
+  // Distance-weighted interpolation from nearby particles
+  let totalVx = 0, totalVy = 0, weight = 0;
+  const radius = 20 * PIXEL_SIZE;
+
+  for (let p of particles) {
+    if (p.type === 'ash') continue; // Ash doesn't pull cursor
+    const px = p.x + sceneOffsetX;
+    const py = p.y + sceneOffsetY;
+    const dx = px - sx;
+    const dy = py - sy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < radius) {
+      const w = (1 - dist / radius) * p.life;
+      // Instantaneous velocity
+      const instVx = p.x - p.prevX;
+      const instVy = p.y - p.prevY;
+      totalVx += instVx * w;
+      totalVy += instVy * w;
+      weight += w;
+    }
+  }
+
+  if (weight > 0.01) {
+    return {
+      vx: (totalVx / weight) * PIXEL_SIZE * 0.15,
+      vy: (totalVy / weight) * PIXEL_SIZE * 0.15,
+      inZone: true
+    };
+  }
+
+  // Fallback: general downward flow with drift from center
+  const fromCenter = (localX - CRATER_X) * 0.005;
+  return {
+    vx: fromCenter * PIXEL_SIZE,
+    vy: 0.8 * PIXEL_SIZE,
+    inZone: true
+  };
+}
+
+// ============================================================
+// PSEUDO-HAPTIC CURSOR
+// ============================================================
+let mouseX = W / 2, mouseY = H / 2;
+let prevMouseX = mouseX, prevMouseY = mouseY;
+let cursorX = mouseX, cursorY = mouseY;
+const cursorEl = document.getElementById('custom-cursor');
+const trail = [];
+const MAX_TRAIL = 40;
+
+document.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+});
+
+function updateCursor(dt, time) {
+  const dmx = mouseX - prevMouseX;
+  const dmy = mouseY - prevMouseY;
+  prevMouseX = mouseX;
+  prevMouseY = mouseY;
+
+  if (!effectEnabled) {
+    cursorX = mouseX;
+    cursorY = mouseY;
+  } else {
+    const v = getVelocityAt(cursorX, cursorY);
+    if (v.inZone) {
+      cursorX += dmx + v.vx * gain * dt * 30;
+      cursorY += dmy + v.vy * gain * dt * 30;
+    } else {
+      cursorX += dmx;
+      cursorY += dmy;
+    }
+  }
+
+  // Clamp to screen
+  cursorX = Math.max(0, Math.min(W, cursorX));
+  cursorY = Math.max(0, Math.min(H, cursorY));
+
+  // Update SVG cursor position
+  cursorEl.style.left = cursorX + 'px';
+  cursorEl.style.top = cursorY + 'px';
+
+  // Trail
+  if (trailEnabled) {
+    trail.push({ x: cursorX, y: cursorY, t: time });
+    while (trail.length > MAX_TRAIL) trail.shift();
+  }
+}
+
+// ============================================================
+// DISPLACEMENT VISUALIZATION
+// ============================================================
+const dispValueEl = document.getElementById('dispValue');
+const zoneValueEl = document.getElementById('zoneValue');
+
+function drawDisplacement(ctx, time) {
+  const dx = cursorX - mouseX;
+  const dy = cursorY - mouseY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  dispValueEl.textContent = dist.toFixed(1);
+
+  const v = getVelocityAt(cursorX, cursorY);
+  zoneValueEl.textContent = v.inZone ? 'LAVA' : '---';
+  zoneValueEl.style.color = v.inZone ? '#884422' : '#605040';
+
+  // Draw trail
+  if (trailEnabled && trail.length > 1) {
+    ctx.beginPath();
+    ctx.moveTo(trail[0].x, trail[0].y);
+    for (let i = 1; i < trail.length; i++) {
+      ctx.lineTo(trail[i].x, trail[i].y);
+    }
+    ctx.strokeStyle = 'rgba(136,68,34,0.25)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Trail dots
+    for (let i = 0; i < trail.length; i++) {
+      const alpha = (i / trail.length) * 0.5;
+      ctx.fillStyle = `rgba(136,68,34,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(trail[i].x, trail[i].y, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Displacement line
+  if (displacementLineEnabled && dist > 1) {
+    ctx.beginPath();
+    ctx.moveTo(mouseX, mouseY);
+    ctx.lineTo(cursorX, cursorY);
+    ctx.strokeStyle = `rgba(136,68,34,${Math.min(0.8, dist / 50)})`;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Mouse real position indicator
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, 4, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(136,68,34,0.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Displacement magnitude text
+    ctx.fillStyle = 'rgba(136,68,34,0.7)';
+    ctx.font = '10px Courier New';
+    ctx.fillText(`${dist.toFixed(1)}px`, (mouseX + cursorX) / 2 + 8, (mouseY + cursorY) / 2 - 8);
+  }
+}
+
+// ============================================================
+// VELOCITY FIELD VISUALIZATION
+// ============================================================
+function drawVelocityField(ctx) {
+  if (!velocityFieldEnabled) return;
+
+  const gridSize = 30;
+  const sceneOffsetX = (W - SCENE_W * PIXEL_SIZE) / 2;
+  const sceneOffsetY = (H - SCENE_H * PIXEL_SIZE) / 2;
+
+  for (let gx = sceneOffsetX; gx < sceneOffsetX + SCENE_W * PIXEL_SIZE; gx += gridSize) {
+    for (let gy = sceneOffsetY; gy < sceneOffsetY + SCENE_H * PIXEL_SIZE; gy += gridSize) {
+      const v = getVelocityAt(gx, gy);
+      if (!v.inZone) continue;
+
+      const mag = Math.sqrt(v.vx * v.vx + v.vy * v.vy);
+      if (mag < 0.01) continue;
+
+      const scale = Math.min(mag * 2, 18);
+      const nx = v.vx / mag;
+      const ny = v.vy / mag;
+
+      const endX = gx + nx * scale;
+      const endY = gy + ny * scale;
+
+      ctx.beginPath();
+      ctx.moveTo(gx, gy);
+      ctx.lineTo(endX, endY);
+      ctx.strokeStyle = `rgba(136,68,34,${Math.min(0.5, mag * 0.1)})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Arrowhead
+      const headLen = 3;
+      const angle = Math.atan2(ny, nx);
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(endX - headLen * Math.cos(angle - 0.5), endY - headLen * Math.sin(angle - 0.5));
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(endX - headLen * Math.cos(angle + 0.5), endY - headLen * Math.sin(angle + 0.5));
+      ctx.strokeStyle = `rgba(136,68,34,${Math.min(0.5, mag * 0.1)})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+}
+
+// ============================================================
+// ATMOSPHERIC EFFECTS
+// ============================================================
+function drawAtmosphere(ctx, time, sceneOffsetX, sceneOffsetY) {
+  const sceneW = SCENE_W * PIXEL_SIZE;
+  const sceneH = SCENE_H * PIXEL_SIZE;
+
+  // --- Ground smoke/haze (slow horizontal drift) ---
+  const hazeY = sceneOffsetY + sceneH * 0.72;
+  const hazeH = sceneH * 0.35;
+  for (let layer = 0; layer < 3; layer++) {
+    const layerOffset = layer * 12;
+    const drift = Math.sin(time * 0.15 + layer * 1.5) * 30;
+    const alpha = 0.08 + layer * 0.03;
+    const grad = ctx.createLinearGradient(0, hazeY + layerOffset, 0, hazeY + hazeH + layerOffset);
+    grad.addColorStop(0, `rgba(18,14,10,0)`);
+    grad.addColorStop(0.3, `rgba(18,14,10,${alpha})`);
+    grad.addColorStop(0.7, `rgba(14,10,8,${alpha * 1.2})`);
+    grad.addColorStop(1, `rgba(10,8,6,${alpha * 0.5})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(sceneOffsetX + drift - 40, hazeY + layerOffset, sceneW + 80, hazeH);
+  }
+
+  // --- Ground ember cracks: faint pulsing orange glow ---
+  for (const fissure of fissureMap) {
+    for (let fi = 0; fi < fissure.length; fi++) {
+      const [fx, fy] = fissure[fi];
+      const pulse = 0.15 + 0.12 * Math.sin(time * 1.5 + fi * 0.7);
+      const screenX = sceneOffsetX + fx * PIXEL_SIZE + PIXEL_SIZE / 2;
+      const screenY = sceneOffsetY + fy * PIXEL_SIZE + PIXEL_SIZE / 2;
+
+      const glowR = 8 + Math.sin(time * 2 + fi) * 3;
+      const grd = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, glowR);
+      grd.addColorStop(0, `rgba(120,40,10,${pulse})`);
+      grd.addColorStop(0.5, `rgba(80,25,5,${pulse * 0.4})`);
+      grd.addColorStop(1, 'rgba(60,20,5,0)');
+      ctx.fillStyle = grd;
+      ctx.fillRect(screenX - glowR, screenY - glowR, glowR * 2, glowR * 2);
+    }
+  }
+
+  // --- Heavy vignette ---
+  // Top
+  const vigT = ctx.createLinearGradient(0, 0, 0, H * 0.4);
+  vigT.addColorStop(0, 'rgba(6,4,4,0.7)');
+  vigT.addColorStop(1, 'rgba(6,4,4,0)');
+  ctx.fillStyle = vigT;
+  ctx.fillRect(0, 0, W, H * 0.4);
+
+  // Bottom
+  const vigB = ctx.createLinearGradient(0, H * 0.65, 0, H);
+  vigB.addColorStop(0, 'rgba(6,4,4,0)');
+  vigB.addColorStop(1, 'rgba(6,4,4,0.75)');
+  ctx.fillStyle = vigB;
+  ctx.fillRect(0, H * 0.65, W, H * 0.35);
+
+  // Left
+  const vigL = ctx.createLinearGradient(0, 0, W * 0.25, 0);
+  vigL.addColorStop(0, 'rgba(6,4,4,0.65)');
+  vigL.addColorStop(1, 'rgba(6,4,4,0)');
+  ctx.fillStyle = vigL;
+  ctx.fillRect(0, 0, W * 0.25, H);
+
+  // Right
+  const vigR = ctx.createLinearGradient(W * 0.75, 0, W, 0);
+  vigR.addColorStop(0, 'rgba(6,4,4,0)');
+  vigR.addColorStop(1, 'rgba(6,4,4,0.65)');
+  ctx.fillStyle = vigR;
+  ctx.fillRect(W * 0.75, 0, W * 0.25, H);
+
+  // Corner extra darkness (radial)
+  const corners = [[0,0],[W,0],[0,H],[W,H]];
+  for (const [cx, cy] of corners) {
+    const cRad = Math.max(W, H) * 0.5;
+    const cGrd = ctx.createRadialGradient(cx, cy, 0, cx, cy, cRad);
+    cGrd.addColorStop(0, 'rgba(6,4,4,0.4)');
+    cGrd.addColorStop(0.4, 'rgba(6,4,4,0.15)');
+    cGrd.addColorStop(1, 'rgba(6,4,4,0)');
+    ctx.fillStyle = cGrd;
+    ctx.fillRect(cx - cRad, cy - cRad, cRad * 2, cRad * 2);
+  }
+
+  // --- Overall desaturation/dark wash ---
+  ctx.fillStyle = 'rgba(8,6,5,0.12)';
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ============================================================
+// UI CONTROLS
+// ============================================================
+const gainSlider = document.getElementById('gainSlider');
+const gainVal = document.getElementById('gainVal');
+const intensitySlider = document.getElementById('intensitySlider');
+const intensityVal = document.getElementById('intensityVal');
+const countSlider = document.getElementById('countSlider');
+const countVal = document.getElementById('countVal');
+const toggleEffect = document.getElementById('toggleEffect');
+const toggleTrail = document.getElementById('toggleTrail');
+const toggleDisplacement = document.getElementById('toggleDisplacement');
+const toggleVelocityField = document.getElementById('toggleVelocityField');
+
+gainSlider.addEventListener('input', () => {
+  gain = parseFloat(gainSlider.value);
+  gainVal.textContent = gain.toFixed(1);
+});
+intensitySlider.addEventListener('input', () => {
+  intensity = parseFloat(intensitySlider.value);
+  intensityVal.textContent = intensity.toFixed(1);
+});
+countSlider.addEventListener('input', () => {
+  particleCount = parseInt(countSlider.value);
+  countVal.textContent = particleCount;
+});
+toggleEffect.addEventListener('change', () => {
+  effectEnabled = toggleEffect.checked;
+  if (!effectEnabled) { cursorX = mouseX; cursorY = mouseY; }
+});
+toggleTrail.addEventListener('change', () => {
+  trailEnabled = toggleTrail.checked;
+  if (!trailEnabled) trail.length = 0;
+});
+toggleDisplacement.addEventListener('change', () => {
+  displacementLineEnabled = toggleDisplacement.checked;
+});
+toggleVelocityField.addEventListener('change', () => {
+  velocityFieldEnabled = toggleVelocityField.checked;
+});
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+buildScene();
+initParticles();
+
+let lastTime = performance.now();
+
+function mainLoop(timestamp) {
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+  const time = timestamp / 1000;
+
+  // Resize handling
+  if (canvas.width !== W || canvas.height !== H) {
+    canvas.width = W;
+    canvas.height = H;
+  }
+
+  // Clear — near black
+  ctx.fillStyle = '#0a0808';
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw scene centered
+  const sceneOffsetX = (W - SCENE_W * PIXEL_SIZE) / 2;
+  const sceneOffsetY = (H - SCENE_H * PIXEL_SIZE) / 2;
+  ctx.drawImage(sceneCanvas, sceneOffsetX, sceneOffsetY);
+
+  // Update and draw particles
+  updateParticles(dt, time);
+  drawParticles(ctx, sceneOffsetX, sceneOffsetY);
+
+  // Animated glow at crater (dimmer, dying)
+  const glowAlpha = 0.08 + 0.06 * Math.sin(time * 2);
+  const craterScreenX = sceneOffsetX + 80 * PIXEL_SIZE;
+  const craterScreenY = sceneOffsetY + 32 * PIXEL_SIZE;
+  const glowGrd = ctx.createRadialGradient(craterScreenX, craterScreenY, 0, craterScreenX, craterScreenY, 45);
+  glowGrd.addColorStop(0, `rgba(120,40,10,${glowAlpha})`);
+  glowGrd.addColorStop(1, 'rgba(80,20,5,0)');
+  ctx.fillStyle = glowGrd;
+  ctx.fillRect(craterScreenX - 45, craterScreenY - 45, 90, 90);
+
+  // Atmospheric effects (haze, fissure glow, vignette)
+  drawAtmosphere(ctx, time, sceneOffsetX, sceneOffsetY);
+
+  // Velocity field
+  drawVelocityField(ctx);
+
+  // Update cursor
+  updateCursor(dt, time);
+
+  // Displacement visualization
+  drawDisplacement(ctx, time);
+
+  requestAnimationFrame(mainLoop);
+}
+
+requestAnimationFrame(mainLoop);
+</script>
+</body>
+</html>

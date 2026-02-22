@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pseudo-Haptic Pixel Art - 忘れられた社の森</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #030408;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: none;
+  }
+  #main-canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    cursor: none;
+  }
+  #custom-cursor {
+    position: fixed;
+    pointer-events: none;
+    z-index: 1000;
+    width: 16px;
+    height: 24px;
+    transition: none;
+  }
+  #cursor-arrow { position: absolute; top: 0; left: 0; }
+  #controls {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    background: rgba(3, 4, 8, 0.94);
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 13px;
+    line-height: 1.7;
+    max-width: 310px;
+    z-index: 500;
+  }
+  #controls h3 {
+    font-size: 14px;
+    margin-bottom: 8px;
+    color: #668844;
+    border-bottom: 1px solid #333;
+    padding-bottom: 4px;
+  }
+  #controls label {
+    display: flex; align-items: center; gap: 8px; margin: 6px 0;
+  }
+  #controls input[type="range"] { width: 120px; accent-color: #668844; }
+  #controls .val { color: #668844; min-width: 32px; text-align: right; }
+  .info-badge {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    background: rgba(3, 4, 8, 0.92);
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 12px;
+    line-height: 1.6;
+    z-index: 500;
+    max-width: 400px;
+  }
+  .info-badge .title { color: #668844; font-weight: bold; }
+  .info-badge .subtle { color: #666; }
+  #displacement-indicator {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    background: rgba(3, 4, 8, 0.92);
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 13px;
+    z-index: 500;
+  }
+  #displacement-indicator .label { color: #666; }
+  #displacement-indicator .value { color: #ff6666; font-weight: bold; }
+  .toggle-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .toggle-row input[type="checkbox"] { accent-color: #668844; }
+</style>
+</head>
+<body>
+
+<canvas id="main-canvas"></canvas>
+
+<div id="custom-cursor">
+  <svg id="cursor-arrow" width="16" height="24" viewBox="0 0 16 24">
+    <polygon points="1,1 1,19 5.5,15 9,22 12,20.5 8,14 14,12"
+             fill="white" stroke="#333" stroke-width="1.2"/>
+  </svg>
+</div>
+
+<div id="controls">
+  <h3>Parameters</h3>
+  <label>
+    Gain (C/D ratio)
+    <input type="range" id="gain-slider" min="0" max="10" step="0.1" value="0.3">
+    <span class="val" id="gain-val">0.3</span>
+  </label>
+  <label>
+    Firefly activity
+    <input type="range" id="wave-slider" min="0.2" max="2" step="0.1" value="1.0">
+    <span class="val" id="wave-val">1.0</span>
+  </label>
+  <label>
+    Firefly count
+    <input type="range" id="count-slider" min="10" max="120" step="5" value="50">
+    <span class="val" id="count-val">50</span>
+  </label>
+  <div class="toggle-row">
+    <input type="checkbox" id="toggle-effect" checked>
+    <label for="toggle-effect">Enable pseudo-haptic effect</label>
+  </div>
+  <div class="toggle-row">
+    <input type="checkbox" id="toggle-trail">
+    <label for="toggle-trail">Show cursor trail</label>
+  </div>
+  <div class="toggle-row">
+    <input type="checkbox" id="toggle-displine" checked>
+    <label for="toggle-displine">Show displacement line</label>
+  </div>
+  <div class="toggle-row">
+    <input type="checkbox" id="toggle-flowfield">
+    <label for="toggle-flowfield">Show velocity field</label>
+  </div>
+</div>
+
+<div id="displacement-indicator">
+  <span class="label">Cursor displacement: </span>
+  <span class="value" id="disp-value">0.0 px</span>
+</div>
+
+<div class="info-badge">
+  <div class="title">Pseudo-Haptic Pixel Art Demo — 忘れられた社</div>
+  <div>霧に包まれた森でカーソルを動かすと、<br>
+  ホタルの光に静かに引き寄せられます。</div>
+  <div class="subtle">パーティクルシステムでホタルを生成し、視覚的カーソル変位で疑似力覚を提示</div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const PIXEL_SIZE = 6;
+const COLS = 160;
+const ROWS = 120;
+
+const canvas = document.getElementById('main-canvas');
+const ctx = canvas.getContext('2d');
+const cursorEl = document.getElementById('custom-cursor');
+
+let W, H;
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ============================================================
+// PALETTE — Abandoned Shrine in Misty Forest
+// ============================================================
+const PAL = {
+  // Sky — nearly pitch black
+  skyTop:       '#020306',
+  skyMid:       '#030408',
+  skyLow:       '#04050a',
+  skyHorizon:   '#05060c',
+  // Stars — very faint
+  starBright:   '#556677',
+  starDim:      '#334455',
+  starFaint:    '#1a2233',
+  // Moon — eerie thin crescent
+  moonBright:   '#99aabb',
+  moonMid:      '#667788',
+  moonDark:     '#445566',
+  moonGlow:     '#1a1a2a',
+  // Trees — ancient, oppressive, almost black-green
+  trunkDark:    '#0a0604',
+  trunkMid:     '#150e08',
+  trunkLight:   '#1a1410',
+  canopyDark:   '#040a04',
+  canopyMid:    '#061006',
+  canopyLight:  '#081408',
+  canopyEdge:   '#050c04',
+  // Dead branch
+  deadBranch:   '#100a06',
+  deadBranchTip:'#0c0804',
+  // Ground — dark moss/earth
+  groundDark:   '#040604',
+  groundMid:    '#060a06',
+  groundLight:  '#081008',
+  grassDark:    '#050806',
+  grassMid:     '#070c08',
+  grassLight:   '#0a120a',
+  mossLight:    '#0c180c',
+  mossDark:     '#061008',
+  // Bushes
+  bushDark:     '#040804',
+  bushMid:      '#060c06',
+  bushLight:    '#081208',
+  // Pond — dark, mirror-like
+  pondDark:     '#030508',
+  pondMid:      '#04070c',
+  pondLight:    '#060a10',
+  pondReflect:  '#0a1018',
+  // Torii gate — faded dark crimson
+  toriiDark:    '#2a0808',
+  toriiMid:     '#3a1010',
+  toriiLight:   '#4a1818',
+  toriiShadow:  '#1a0404',
+  // Stone — cracked, weathered
+  stoneDark:    '#0c0c0c',
+  stoneMid:     '#161616',
+  stoneLight:   '#1e1e1e',
+  stoneMoss:    '#0a100a',
+  // Lantern glow
+  lanternWarm:  '#443318',
+  lanternGlow:  '#664422',
+  // Stone path
+  pathDark:     '#0a0a0a',
+  pathMid:      '#121212',
+  pathLight:    '#181818',
+  pathMoss:     '#0a0e08',
+  // Fallen leaves
+  leafRed:      '#1a0808',
+  leafBrown:    '#140e06',
+  leafOrange:   '#1a1006',
+  // Shimenawa rope
+  ropeDark:     '#1a1610',
+  ropeMid:      '#22201a',
+  ropeLight:    '#2a2820',
+  // Lily pads
+  lilyDark:     '#040a06',
+  lilyLight:    '#061008',
+};
+
+// ============================================================
+// PIXEL ART SCENE (Abandoned Shrine in Misty Forest at Night)
+// ============================================================
+const sceneCanvas = document.createElement('canvas');
+const sceneCtx = sceneCanvas.getContext('2d');
+
+// Zone boundaries in grid coords
+const CANOPY_TOP = 6;
+const GROUND_Y = 95;
+const GROUND_BOTTOM = ROWS;
+
+function drawPixel(sctx, gx, gy, color) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+  sctx.fillStyle = color;
+  sctx.fillRect(ox + gx * PIXEL_SIZE, oy + gy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+}
+
+function drawRect(sctx, gx, gy, gw, gh, color) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+  sctx.fillStyle = color;
+  sctx.fillRect(ox + gx * PIXEL_SIZE, oy + gy * PIXEL_SIZE, gw * PIXEL_SIZE, gh * PIXEL_SIZE);
+}
+
+function lerpColor(c1, c2, t) {
+  const r1 = parseInt(c1.slice(1, 3), 16), g1 = parseInt(c1.slice(3, 5), 16), b1 = parseInt(c1.slice(5, 7), 16);
+  const r2 = parseInt(c2.slice(1, 3), 16), g2 = parseInt(c2.slice(3, 5), 16), b2 = parseInt(c2.slice(5, 7), 16);
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const b = Math.round(b1 + (b2 - b1) * t);
+  return `rgb(${r},${g},${b})`;
+}
+
+// Seeded random for consistent scene
+let _seed = 42;
+function seededRandom() {
+  _seed = (_seed * 16807 + 0) % 2147483647;
+  return (_seed - 1) / 2147483646;
+}
+
+function buildScene() {
+  _seed = 42;
+  sceneCanvas.width = W;
+  sceneCanvas.height = H;
+  const s = sceneCtx;
+
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+
+  // --- Fill entire canvas with near-black ---
+  s.fillStyle = '#030408';
+  s.fillRect(0, 0, W, H);
+
+  // --- Sky gradient (nearly pitch black) ---
+  for (let y = 0; y < GROUND_Y; y++) {
+    const t = y / GROUND_Y;
+    let color;
+    if (t < 0.3) {
+      color = lerpColor(PAL.skyTop, PAL.skyMid, t / 0.3);
+    } else if (t < 0.7) {
+      color = lerpColor(PAL.skyMid, PAL.skyLow, (t - 0.3) / 0.4);
+    } else {
+      color = lerpColor(PAL.skyLow, PAL.skyHorizon, (t - 0.7) / 0.3);
+    }
+    drawRect(s, 0, y, COLS, 1, color);
+  }
+
+  // --- Stars (very few, faint, seen through canopy gaps) ---
+  const starPositions = [];
+  for (let i = 0; i < 40; i++) {
+    const sx = Math.floor(seededRandom() * COLS);
+    const sy = Math.floor(seededRandom() * (GROUND_Y - 5));
+    const brightness = seededRandom();
+    starPositions.push({ x: sx, y: sy, b: brightness });
+    let color;
+    if (brightness > 0.9) {
+      color = PAL.starBright;
+    } else if (brightness > 0.5) {
+      color = PAL.starDim;
+    } else {
+      color = PAL.starFaint;
+    }
+    drawPixel(s, sx, sy, color);
+  }
+
+  // --- Moon (thin crescent, partially hidden, upper-right) ---
+  const moonCx = 130;
+  const moonCy = 12;
+  const moonR = 5;
+  for (let dy = -moonR; dy <= moonR; dy++) {
+    for (let dx = -moonR; dx <= moonR; dx++) {
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= moonR) {
+        // Thinner crescent: larger inner offset
+        const innerDist = Math.sqrt((dx - 3.5) * (dx - 3.5) + (dy - 0.5) * (dy - 0.5));
+        if (innerDist > moonR * 0.8) {
+          const c = dist < moonR * 0.6 ? PAL.moonBright : PAL.moonMid;
+          drawPixel(s, moonCx + dx, moonCy + dy, c);
+        }
+      }
+    }
+  }
+
+  // Moon glow (very faint)
+  for (let dy = -moonR - 4; dy <= moonR + 4; dy++) {
+    for (let dx = -moonR - 4; dx <= moonR + 4; dx++) {
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > moonR && dist < moonR + 4) {
+        const alpha = (1 - (dist - moonR) / 4) * 0.06;
+        const gx = moonCx + dx;
+        const gy = moonCy + dy;
+        if (gy >= 0 && gy < GROUND_Y && gx >= 0 && gx < COLS) {
+          s.fillStyle = `rgba(100, 110, 140, ${alpha})`;
+          s.fillRect(ox + gx * PIXEL_SIZE, oy + gy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+        }
+      }
+    }
+  }
+
+  // --- Clouds partially obscuring moon ---
+  const cloudPixels = [
+    [128,9],[129,9],[130,9],[131,9],[132,9],
+    [127,10],[128,10],[133,10],[134,10],
+    [131,8],[132,8],[133,8],
+    [134,11],[135,11],[136,11],
+    [133,12],[134,12],
+    [126,11],[127,11],
+  ];
+  for (const [cx, cy] of cloudPixels) {
+    if (cx >= 0 && cx < COLS && cy >= 0 && cy < GROUND_Y) {
+      const a = 0.3 + seededRandom() * 0.3;
+      s.fillStyle = `rgba(8, 10, 16, ${a})`;
+      s.fillRect(ox + cx * PIXEL_SIZE, oy + cy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+    }
+  }
+
+  // --- Ground (dark moss/earth) ---
+  for (let y = GROUND_Y; y < ROWS; y++) {
+    const t = (y - GROUND_Y) / (ROWS - GROUND_Y);
+    const color = lerpColor(PAL.groundLight, PAL.groundDark, t);
+    drawRect(s, 0, y, COLS, 1, color);
+  }
+
+  // Ground texture (moss and earth patches)
+  for (let i = 0; i < 150; i++) {
+    const gx = Math.floor(seededRandom() * COLS);
+    const gy = GROUND_Y + Math.floor(seededRandom() * (ROWS - GROUND_Y));
+    const colors = [PAL.mossDark, PAL.mossLight, PAL.groundMid, PAL.grassDark];
+    drawPixel(s, gx, gy, colors[Math.floor(seededRandom() * colors.length)]);
+  }
+
+  // Grass tufts at ground line (sparse, overgrown)
+  for (let x = 0; x < COLS; x++) {
+    if (seededRandom() > 0.5) {
+      const h = 1 + Math.floor(seededRandom() * 4);
+      for (let dy = 0; dy < h; dy++) {
+        const gy = GROUND_Y - dy;
+        if (gy >= 0) {
+          const c = dy === h - 1 ? PAL.grassLight : PAL.grassDark;
+          drawPixel(s, x, gy, c);
+        }
+      }
+    }
+  }
+
+  // --- Fallen leaves scattered on ground ---
+  const leafColors = [PAL.leafRed, PAL.leafBrown, PAL.leafOrange];
+  for (let i = 0; i < 60; i++) {
+    const lx = Math.floor(seededRandom() * COLS);
+    const ly = GROUND_Y + Math.floor(seededRandom() * 6);
+    drawPixel(s, lx, ly, leafColors[Math.floor(seededRandom() * leafColors.length)]);
+  }
+
+  // --- Stone path leading to torii gate (cracked, mossy) ---
+  const pathCenterX = 80;
+  const pathWidth = 6;
+  for (let y = GROUND_Y; y < ROWS; y++) {
+    const spread = pathWidth + Math.floor((y - GROUND_Y) * 0.3);
+    for (let dx = -spread; dx <= spread; dx++) {
+      const gx = pathCenterX + dx;
+      if (gx < 0 || gx >= COLS) continue;
+      const edgeDist = Math.abs(dx) / spread;
+      if (edgeDist > 0.85 + seededRandom() * 0.15) continue;
+
+      let c;
+      if (seededRandom() > 0.8) {
+        c = PAL.pathMoss; // moss growing in cracks
+      } else if (edgeDist < 0.3) {
+        c = PAL.pathLight;
+      } else if (edgeDist < 0.6) {
+        c = PAL.pathMid;
+      } else {
+        c = PAL.pathDark;
+      }
+      // Add cracks
+      if (seededRandom() > 0.92) {
+        c = '#080808';
+      }
+      drawPixel(s, gx, y, c);
+    }
+  }
+  // Path extending upward slightly before ground line
+  for (let y = GROUND_Y - 2; y < GROUND_Y; y++) {
+    for (let dx = -pathWidth; dx <= pathWidth; dx++) {
+      const gx = pathCenterX + dx;
+      if (gx >= 0 && gx < COLS && seededRandom() > 0.3) {
+        drawPixel(s, gx, y, seededRandom() > 0.7 ? PAL.pathMoss : PAL.pathDark);
+      }
+    }
+  }
+
+  // --- Pond (dark, mirror-like, center-right) ---
+  const pondCx = 115;
+  const pondCy = GROUND_Y + 10;
+  const pondW = 20;
+  const pondH = 5;
+  for (let dy = -pondH; dy <= pondH; dy++) {
+    for (let dx = -pondW; dx <= pondW; dx++) {
+      const nx = dx / pondW;
+      const ny = dy / pondH;
+      if (nx * nx + ny * ny < 1) {
+        const dist = Math.sqrt(nx * nx + ny * ny);
+        let c;
+        if (dist < 0.4) {
+          c = PAL.pondDark;
+        } else if (dist < 0.7) {
+          c = PAL.pondMid;
+        } else {
+          c = PAL.pondLight;
+        }
+        drawPixel(s, pondCx + dx, pondCy + dy, c);
+      }
+    }
+  }
+
+  // Lily pads on pond
+  const lilyPads = [
+    { x: pondCx - 8, y: pondCy - 1 },
+    { x: pondCx + 5, y: pondCy + 1 },
+    { x: pondCx - 3, y: pondCy + 2 },
+  ];
+  for (const lp of lilyPads) {
+    drawPixel(s, lp.x, lp.y, PAL.lilyDark);
+    drawPixel(s, lp.x + 1, lp.y, PAL.lilyLight);
+    drawPixel(s, lp.x, lp.y - 1, PAL.lilyLight);
+  }
+
+  // Moon reflection on pond (barely visible)
+  for (let dx = -2; dx <= 2; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      const rdist = Math.abs(dx) + Math.abs(dy);
+      if (rdist <= 2) {
+        const alpha = 0.04 * (1 - rdist / 3);
+        s.fillStyle = `rgba(100, 110, 140, ${alpha})`;
+        s.fillRect(
+          ox + (pondCx + dx) * PIXEL_SIZE,
+          oy + (pondCy + dy) * PIXEL_SIZE,
+          PIXEL_SIZE, PIXEL_SIZE
+        );
+      }
+    }
+  }
+
+  // --- TORII GATE (abandoned, faded crimson, slightly leaning) ---
+  const toriiX = 76; // center
+  const toriiBaseY = GROUND_Y - 1;
+  const toriiHeight = 22;
+  const toriiTopY = toriiBaseY - toriiHeight;
+  const pillarSpacing = 10;
+  const lean = 1; // slight lean to the right
+
+  // Left pillar (slightly leaning)
+  for (let y = toriiTopY; y <= toriiBaseY; y++) {
+    const t = (y - toriiTopY) / toriiHeight;
+    const leanOffset = Math.floor(t * lean * 0.5);
+    const gx = toriiX - pillarSpacing + leanOffset;
+    drawPixel(s, gx, y, t < 0.3 ? PAL.toriiLight : (t < 0.7 ? PAL.toriiMid : PAL.toriiDark));
+    drawPixel(s, gx + 1, y, t < 0.3 ? PAL.toriiMid : PAL.toriiDark);
+    // Moss/overgrowth on lower portion
+    if (t > 0.7 && seededRandom() > 0.5) {
+      drawPixel(s, gx - 1, y, PAL.mossDark);
+    }
+    if (t > 0.85 && seededRandom() > 0.4) {
+      drawPixel(s, gx + 2, y, PAL.mossDark);
+    }
+  }
+
+  // Right pillar
+  for (let y = toriiTopY; y <= toriiBaseY; y++) {
+    const t = (y - toriiTopY) / toriiHeight;
+    const leanOffset = Math.floor(t * lean);
+    const gx = toriiX + pillarSpacing + leanOffset;
+    drawPixel(s, gx, y, t < 0.3 ? PAL.toriiLight : (t < 0.7 ? PAL.toriiMid : PAL.toriiDark));
+    drawPixel(s, gx - 1, y, t < 0.3 ? PAL.toriiMid : PAL.toriiDark);
+    if (t > 0.7 && seededRandom() > 0.5) {
+      drawPixel(s, gx + 1, y, PAL.mossDark);
+    }
+    if (t > 0.85 && seededRandom() > 0.4) {
+      drawPixel(s, gx - 2, y, PAL.mossDark);
+    }
+  }
+
+  // Top beam (kasagi) — curved upward at ends
+  for (let dx = -pillarSpacing - 3; dx <= pillarSpacing + 3 + lean; dx++) {
+    const curve = Math.abs(dx) > pillarSpacing ? -1 : 0;
+    const gx = toriiX + dx;
+    const gy = toriiTopY + curve;
+    if (gx >= 0 && gx < COLS) {
+      drawPixel(s, gx, gy, PAL.toriiLight);
+      drawPixel(s, gx, gy + 1, PAL.toriiMid);
+    }
+  }
+
+  // Secondary beam (nuki) — slightly below top
+  const nukiY = toriiTopY + 4;
+  for (let dx = -pillarSpacing; dx <= pillarSpacing + lean; dx++) {
+    const gx = toriiX + dx;
+    if (gx >= 0 && gx < COLS) {
+      drawPixel(s, gx, nukiY, PAL.toriiDark);
+    }
+  }
+
+  // Shimenawa rope hanging from nuki (will be animated separately, but draw base)
+  const ropeY = nukiY + 1;
+  for (let dx = -pillarSpacing + 2; dx <= pillarSpacing - 2 + lean; dx++) {
+    const gx = toriiX + dx;
+    const sag = Math.floor(Math.sin((dx + pillarSpacing) / (pillarSpacing * 2) * Math.PI) * 3);
+    const gy = ropeY + sag;
+    if (gx >= 0 && gx < COLS && gy >= 0 && gy < ROWS) {
+      drawPixel(s, gx, gy, seededRandom() > 0.5 ? PAL.ropeMid : PAL.ropeDark);
+    }
+  }
+  // Shide (paper streamers) hanging from shimenawa
+  const shidePositions = [toriiX - 5, toriiX - 1, toriiX + 3, toriiX + 7];
+  for (const sx of shidePositions) {
+    const sag = Math.floor(Math.sin((sx - toriiX + pillarSpacing) / (pillarSpacing * 2) * Math.PI) * 3);
+    for (let dy = 0; dy < 3; dy++) {
+      const gy = ropeY + sag + dy + 1;
+      if (gy >= 0 && gy < ROWS && sx >= 0 && sx < COLS) {
+        drawPixel(s, sx, gy, dy === 0 ? '#1a1a18' : '#121210');
+      }
+    }
+  }
+
+  // Vines/overgrowth on torii
+  const vinePositions = [
+    { x: toriiX - pillarSpacing - 2, yStart: toriiTopY, yEnd: toriiTopY + 8 },
+    { x: toriiX + pillarSpacing + 2 + lean, yStart: toriiTopY - 1, yEnd: toriiTopY + 6 },
+    { x: toriiX - pillarSpacing + 1, yStart: toriiTopY + 2, yEnd: toriiTopY + 10 },
+  ];
+  for (const vine of vinePositions) {
+    for (let y = vine.yStart; y < vine.yEnd; y++) {
+      if (seededRandom() > 0.3 && vine.x >= 0 && vine.x < COLS && y >= 0 && y < ROWS) {
+        drawPixel(s, vine.x, y, seededRandom() > 0.5 ? PAL.mossDark : PAL.canopyDark);
+      }
+    }
+  }
+
+  // --- STONE LANTERN (toro) near torii ---
+  const lanternX = toriiX + pillarSpacing + 6 + lean;
+  const lanternBaseY = GROUND_Y;
+
+  // Base
+  drawPixel(s, lanternX - 1, lanternBaseY, PAL.stoneDark);
+  drawPixel(s, lanternX, lanternBaseY, PAL.stoneMid);
+  drawPixel(s, lanternX + 1, lanternBaseY, PAL.stoneDark);
+
+  // Stem
+  drawPixel(s, lanternX, lanternBaseY - 1, PAL.stoneMid);
+  drawPixel(s, lanternX, lanternBaseY - 2, PAL.stoneLight);
+  drawPixel(s, lanternX, lanternBaseY - 3, PAL.stoneMid);
+
+  // Fire box (yokushi)
+  drawPixel(s, lanternX - 1, lanternBaseY - 4, PAL.stoneMid);
+  drawPixel(s, lanternX, lanternBaseY - 4, PAL.lanternWarm); // warm glow pixel inside
+  drawPixel(s, lanternX + 1, lanternBaseY - 4, PAL.stoneMid);
+
+  // Roof (kasa)
+  drawPixel(s, lanternX - 2, lanternBaseY - 5, PAL.stoneDark);
+  drawPixel(s, lanternX - 1, lanternBaseY - 5, PAL.stoneMid);
+  drawPixel(s, lanternX, lanternBaseY - 5, PAL.stoneLight);
+  drawPixel(s, lanternX + 1, lanternBaseY - 5, PAL.stoneMid);
+  drawPixel(s, lanternX + 2, lanternBaseY - 5, PAL.stoneDark);
+
+  // Finial
+  drawPixel(s, lanternX, lanternBaseY - 6, PAL.stoneMid);
+
+  // Moss on lantern
+  drawPixel(s, lanternX - 1, lanternBaseY - 1, PAL.stoneMoss);
+  drawPixel(s, lanternX + 1, lanternBaseY - 3, PAL.stoneMoss);
+  // Cracks
+  drawPixel(s, lanternX + 1, lanternBaseY - 2, '#0a0a0a');
+
+  // --- Trees (larger, more oppressive, twisted, ancient) ---
+  const trees = [
+    { x: 5,   trunkH: 55, trunkW: 5,  canopyR: 18, canopyY: 20, dead: false },
+    { x: 22,  trunkH: 60, trunkW: 6,  canopyR: 22, canopyY: 14, dead: false },
+    { x: 42,  trunkH: 45, trunkW: 3,  canopyR: 14, canopyY: 32, dead: true },
+    { x: 58,  trunkH: 65, trunkW: 7,  canopyR: 25, canopyY: 10, dead: false },
+    { x: 98,  trunkH: 50, trunkW: 4,  canopyR: 16, canopyY: 26, dead: false },
+    { x: 118, trunkH: 58, trunkW: 6,  canopyR: 20, canopyY: 16, dead: false },
+    { x: 138, trunkH: 62, trunkW: 5,  canopyR: 22, canopyY: 12, dead: false },
+    { x: 152, trunkH: 55, trunkW: 5,  canopyR: 18, canopyY: 20, dead: false },
+    // Background trees (smaller, even darker)
+    { x: 12,  trunkH: 30, trunkW: 2,  canopyR: 10, canopyY: 48, dead: false },
+    { x: 35,  trunkH: 35, trunkW: 3,  canopyR: 12, canopyY: 42, dead: true },
+    { x: 72,  trunkH: 28, trunkW: 2,  canopyR: 9,  canopyY: 50, dead: false },
+    { x: 108, trunkH: 32, trunkW: 2,  canopyR: 10, canopyY: 46, dead: false },
+    { x: 130, trunkH: 30, trunkW: 2,  canopyR: 11, canopyY: 44, dead: false },
+    { x: 148, trunkH: 26, trunkW: 2,  canopyR: 8,  canopyY: 52, dead: false },
+  ];
+
+  for (const tree of trees) {
+    // Trunk
+    const trunkBottom = GROUND_Y;
+    const trunkTop = trunkBottom - tree.trunkH;
+    for (let y = trunkTop; y < trunkBottom; y++) {
+      for (let dx = 0; dx < tree.trunkW; dx++) {
+        const t = (y - trunkTop) / tree.trunkH;
+        let c;
+        if (dx === 0 || dx === tree.trunkW - 1) {
+          c = PAL.trunkDark;
+        } else {
+          c = t > 0.7 ? PAL.trunkLight : PAL.trunkMid;
+        }
+        drawPixel(s, tree.x + dx, y, c);
+      }
+    }
+
+    // Exposed roots at base
+    if (tree.trunkW >= 4) {
+      for (let rootI = 0; rootI < 3; rootI++) {
+        const rootDir = rootI === 0 ? -1 : (rootI === 1 ? 1 : (seededRandom() > 0.5 ? -1 : 1));
+        const rootLen = 2 + Math.floor(seededRandom() * 4);
+        for (let dx = 0; dx < rootLen; dx++) {
+          const gx = tree.x + (rootDir > 0 ? tree.trunkW + dx : -dx - 1);
+          const gy = trunkBottom - 1 + Math.floor(dx * 0.4);
+          if (gx >= 0 && gx < COLS && gy < ROWS) {
+            drawPixel(s, gx, gy, PAL.trunkDark);
+          }
+        }
+      }
+    }
+
+    if (tree.dead) {
+      // Dead tree: bare branches, no canopy
+      const branchCount = 4 + Math.floor(seededRandom() * 4);
+      for (let b = 0; b < branchCount; b++) {
+        const branchY = trunkTop + Math.floor(seededRandom() * tree.trunkH * 0.5);
+        const branchDir = seededRandom() > 0.5 ? 1 : -1;
+        const branchLen = 4 + Math.floor(seededRandom() * 10);
+        for (let i = 0; i < branchLen; i++) {
+          const bx = tree.x + Math.floor(tree.trunkW / 2) + branchDir * i;
+          const by = branchY - Math.floor(i * 0.4) + Math.floor(seededRandom() * 2 - 1);
+          if (bx >= 0 && bx < COLS && by >= 0 && by < ROWS) {
+            drawPixel(s, bx, by, i < branchLen - 2 ? PAL.deadBranch : PAL.deadBranchTip);
+          }
+        }
+      }
+    } else {
+      // Canopy (irregular, thick, oppressive)
+      const cCx = tree.x + Math.floor(tree.trunkW / 2);
+      const cCy = tree.canopyY;
+      const r = tree.canopyR;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r - 3; dx <= r + 3; dx++) {
+          const noise = seededRandom() * 3;
+          const dist = Math.sqrt(dx * dx + (dy * 1.2) * (dy * 1.2));
+          if (dist <= r + noise - 1) {
+            const gx = cCx + dx;
+            const gy = cCy + dy;
+            if (gx >= 0 && gx < COLS && gy >= 0 && gy < ROWS) {
+              let c;
+              if (dist < r * 0.4) {
+                c = PAL.canopyDark;
+              } else if (dist < r * 0.7) {
+                c = PAL.canopyMid;
+              } else {
+                c = seededRandom() > 0.6 ? PAL.canopyEdge : PAL.canopyLight;
+              }
+              drawPixel(s, gx, gy, c);
+            }
+          }
+        }
+      }
+
+      // Some bare branches poking out of canopy
+      const deadBranchCount = 2 + Math.floor(seededRandom() * 2);
+      for (let b = 0; b < deadBranchCount; b++) {
+        const startAngle = seededRandom() * Math.PI * 2;
+        const branchLen = r + 2 + Math.floor(seededRandom() * 6);
+        for (let i = r - 2; i < branchLen; i++) {
+          const bx = cCx + Math.round(Math.cos(startAngle) * i);
+          const by = cCy + Math.round(Math.sin(startAngle) * i * 0.7);
+          if (bx >= 0 && bx < COLS && by >= 0 && by < ROWS) {
+            drawPixel(s, bx, by, PAL.deadBranch);
+          }
+        }
+      }
+    }
+  }
+
+  // --- Dense canopy overlay at top (blocks most sky) ---
+  for (let x = 0; x < COLS; x++) {
+    for (let y = 0; y < CANOPY_TOP + 4; y++) {
+      if (seededRandom() > 0.15) { // 85% coverage
+        drawPixel(s, x, y, PAL.canopyDark);
+      }
+    }
+  }
+
+  // --- Bushes (overgrown) ---
+  const bushes = [
+    { x: 2,   y: GROUND_Y - 3, w: 10, h: 4 },
+    { x: 30,  y: GROUND_Y - 2, w: 8,  h: 3 },
+    { x: 50,  y: GROUND_Y - 3, w: 12, h: 4 },
+    { x: 90,  y: GROUND_Y - 2, w: 9,  h: 3 },
+    { x: 125, y: GROUND_Y - 3, w: 10, h: 4 },
+    { x: 145, y: GROUND_Y - 2, w: 8,  h: 3 },
+  ];
+
+  for (const bush of bushes) {
+    for (let dy = 0; dy < bush.h; dy++) {
+      for (let dx = 0; dx < bush.w; dx++) {
+        const nx = (dx / bush.w - 0.5) * 2;
+        const ny = (dy / bush.h - 0.5) * 2;
+        if (nx * nx + ny * ny < 1.2 + seededRandom() * 0.3) {
+          const dist = Math.sqrt(nx * nx + ny * ny);
+          let c;
+          if (dist < 0.5) {
+            c = PAL.bushDark;
+          } else if (dist < 0.8) {
+            c = PAL.bushMid;
+          } else {
+            c = PAL.bushLight;
+          }
+          const gx = bush.x + dx;
+          const gy = bush.y + dy;
+          if (gx >= 0 && gx < COLS && gy >= 0 && gy < ROWS) {
+            drawPixel(s, gx, gy, c);
+          }
+        }
+      }
+    }
+  }
+
+  // --- Small rocks (weathered) ---
+  const rocks = [
+    { x: 20, y: GROUND_Y + 1 },
+    { x: 60, y: GROUND_Y + 2 },
+    { x: 100, y: GROUND_Y + 1 },
+    { x: 140, y: GROUND_Y + 2 },
+    // Near torii
+    { x: toriiX - pillarSpacing - 3, y: GROUND_Y + 1 },
+    { x: toriiX + pillarSpacing + 3 + lean, y: GROUND_Y },
+  ];
+  for (const r of rocks) {
+    drawPixel(s, r.x, r.y, PAL.stoneDark);
+    drawPixel(s, r.x + 1, r.y, PAL.stoneMid);
+    drawPixel(s, r.x, r.y - 1, PAL.stoneLight);
+    if (seededRandom() > 0.5) drawPixel(s, r.x - 1, r.y, PAL.stoneMoss);
+  }
+}
+
+// ============================================================
+// FIREFLY PARTICLES (ethereal, spirit-like)
+// ============================================================
+let fireflyParticles = [];
+let fireflyCount = 50;
+let fireflyActivity = 1.0;
+
+function createFireflyParticle(randomPos = false) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+
+  // Fireflies float in the air zone (above ground, between trees)
+  const airTop = CANOPY_TOP + 5;
+  const airBottom = GROUND_Y - 2;
+  const yGrid = airTop + Math.random() * (airBottom - airTop);
+  const xGrid = Math.random() * COLS;
+
+  return {
+    x: ox + xGrid * PIXEL_SIZE,
+    y: oy + yGrid * PIXEL_SIZE,
+    // Slow random drift velocity
+    vx: (Math.random() - 0.5) * 0.4,
+    vy: (Math.random() - 0.5) * 0.3,
+    // Drift change timer
+    driftTimer: Math.random() * 3,
+    driftInterval: 2 + Math.random() * 4,
+    // Sinusoidal wobble parameters
+    wobblePhaseX: Math.random() * Math.PI * 2,
+    wobblePhaseY: Math.random() * Math.PI * 2,
+    wobbleFreqX: 0.5 + Math.random() * 1.5,
+    wobbleFreqY: 0.7 + Math.random() * 1.3,
+    wobbleAmpX: 0.1 + Math.random() * 0.3,
+    wobbleAmpY: 0.1 + Math.random() * 0.2,
+    // Glow pulsing — slower, more ethereal
+    glowPhase: Math.random() * Math.PI * 2,
+    glowFreq: 0.15 + Math.random() * 0.5,
+    glowMin: 0.02 + Math.random() * 0.1,
+    glowMax: 0.5 + Math.random() * 0.5,
+    // Blink pattern
+    blinkStyle: Math.random() > 0.5 ? 'pulse' : 'blink',
+    blinkDuty: 0.3 + Math.random() * 0.4,
+    // Size
+    size: 0.8 + Math.random() * 0.8,
+    // Halo radius — larger for more ghostly glow
+    haloSize: 3 + Math.random() * 3,
+    // Life
+    life: randomPos ? 0.5 + Math.random() * 0.5 : 1.0,
+    // Color warmth variation — shifted to greenish-gold
+    warmth: Math.random(),
+  };
+}
+
+function initFireflies() {
+  fireflyParticles = [];
+  for (let i = 0; i < fireflyCount; i++) fireflyParticles.push(createFireflyParticle(true));
+}
+initFireflies();
+
+function updateFireflies(dt, time) {
+  while (fireflyParticles.length < fireflyCount) fireflyParticles.push(createFireflyParticle(true));
+  while (fireflyParticles.length > fireflyCount) fireflyParticles.pop();
+
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+  const leftEdge = ox;
+  const rightEdge = ox + COLS * PIXEL_SIZE;
+  const topEdge = oy + CANOPY_TOP * PIXEL_SIZE;
+  const bottomEdge = oy + GROUND_Y * PIXEL_SIZE;
+
+  for (let p of fireflyParticles) {
+    // Update drift direction periodically
+    p.driftTimer += dt;
+    if (p.driftTimer >= p.driftInterval) {
+      p.driftTimer = 0;
+      p.driftInterval = 2 + Math.random() * 4;
+      p.vx = (Math.random() - 0.5) * 0.4 * fireflyActivity;
+      p.vy = (Math.random() - 0.5) * 0.3 * fireflyActivity;
+    }
+
+    // Base drift movement
+    const driftX = p.vx * fireflyActivity;
+    const driftY = p.vy * fireflyActivity;
+
+    // Sinusoidal wobble
+    const wobbleX = Math.sin(time * p.wobbleFreqX + p.wobblePhaseX) * p.wobbleAmpX * fireflyActivity;
+    const wobbleY = Math.sin(time * p.wobbleFreqY + p.wobblePhaseY) * p.wobbleAmpY * fireflyActivity;
+
+    p.x += (driftX + wobbleX) * PIXEL_SIZE * dt * 2;
+    p.y += (driftY + wobbleY) * PIXEL_SIZE * dt * 2;
+
+    // Reset if out of bounds
+    if (p.x < leftEdge - 5 * PIXEL_SIZE || p.x > rightEdge + 5 * PIXEL_SIZE ||
+        p.y < topEdge - 5 * PIXEL_SIZE || p.y > bottomEdge + 5 * PIXEL_SIZE) {
+      Object.assign(p, createFireflyParticle(true));
+    }
+  }
+}
+
+function drawFireflies(time) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+
+  for (let p of fireflyParticles) {
+    // Compute glow intensity
+    let glowT;
+    if (p.blinkStyle === 'blink') {
+      // Sharp on/off blink
+      const cycle = ((time * p.glowFreq + p.glowPhase) % (Math.PI * 2)) / (Math.PI * 2);
+      glowT = cycle < p.blinkDuty ? 1.0 : 0.0;
+      // Smooth transition at edges
+      const edgeWidth = 0.08;
+      if (cycle < edgeWidth) {
+        glowT = cycle / edgeWidth;
+      } else if (cycle > p.blinkDuty - edgeWidth && cycle < p.blinkDuty) {
+        glowT = (p.blinkDuty - cycle) / edgeWidth;
+      }
+    } else {
+      // Smooth sinusoidal pulse
+      glowT = 0.5 + 0.5 * Math.sin(time * p.glowFreq * Math.PI * 2 + p.glowPhase);
+    }
+
+    const alpha = p.glowMin + (p.glowMax - p.glowMin) * glowT;
+    if (alpha < 0.05) continue;
+
+    const snapX = Math.round(p.x / PIXEL_SIZE) * PIXEL_SIZE;
+    const snapY = Math.round(p.y / PIXEL_SIZE) * PIXEL_SIZE;
+
+    // Color: greenish-gold (spirit/hitodama feel)
+    const r = Math.round(80 + p.warmth * 80);
+    const g = Math.round(180 + p.warmth * 50);
+    const b = Math.round(20 + (1 - p.warmth) * 30);
+
+    // Outer halo (larger, more ghostly)
+    const haloR = p.haloSize * PIXEL_SIZE * (0.8 + glowT * 0.6);
+    const gradient = ctx.createRadialGradient(snapX, snapY, 0, snapX, snapY, haloR);
+    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${alpha * 0.4})`);
+    gradient.addColorStop(0.3, `rgba(${r}, ${g}, ${b}, ${alpha * 0.15})`);
+    gradient.addColorStop(0.6, `rgba(${r}, ${g}, ${b}, ${alpha * 0.05})`);
+    gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(snapX - haloR, snapY - haloR, haloR * 2, haloR * 2);
+
+    // Core bright pixel
+    const coreSize = Math.max(PIXEL_SIZE * 0.5, p.size * PIXEL_SIZE * 0.5);
+    ctx.fillStyle = `rgba(${Math.min(255, r + 60)}, ${Math.min(255, g + 40)}, ${Math.min(255, b + 40)}, ${Math.min(1, alpha * 1.1)})`;
+    ctx.fillRect(
+      snapX - coreSize / 2,
+      snapY - coreSize / 2,
+      coreSize, coreSize
+    );
+  }
+}
+
+// ============================================================
+// VELOCITY LOOKUP (particle-based, distance-weighted interpolation)
+// ============================================================
+let currentTime = 0;
+
+function getFireflyVelocityAt(sx, sy) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+
+  // Air zone (where fireflies roam)
+  const zoneLeft   = ox;
+  const zoneRight  = ox + COLS * PIXEL_SIZE;
+  const zoneTop    = oy + CANOPY_TOP * PIXEL_SIZE;
+  const zoneBottom = oy + GROUND_Y * PIXEL_SIZE;
+
+  if (sx < zoneLeft || sx > zoneRight || sy < zoneTop || sy > zoneBottom) {
+    return { vx: 0, vy: 0, inZone: false };
+  }
+
+  let totalVx = 0, totalVy = 0, weight = 0;
+  const radius = 20 * PIXEL_SIZE;
+
+  for (let p of fireflyParticles) {
+    const dx = p.x - sx;
+    const dy = p.y - sy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < radius) {
+      // Glow-based weight: brighter fireflies attract more
+      const glowT = 0.5 + 0.5 * Math.sin(currentTime * p.glowFreq * Math.PI * 2 + p.glowPhase);
+      const glowWeight = 0.3 + glowT * 0.7;
+
+      const w = (1 - dist / radius) * glowWeight;
+
+      // Attraction toward firefly (direction from cursor to firefly)
+      const dirLen = dist + 0.01;
+      const attractX = dx / dirLen;
+      const attractY = dy / dirLen;
+
+      // Combine drift velocity + attraction pull
+      const instVx = p.vx * fireflyActivity + attractX * 0.8;
+      const instVy = p.vy * fireflyActivity + attractY * 0.8;
+
+      totalVx += instVx * w;
+      totalVy += instVy * w;
+      weight += w;
+    }
+  }
+
+  if (weight > 0.01) {
+    return {
+      vx: (totalVx / weight) * PIXEL_SIZE,
+      vy: (totalVy / weight) * PIXEL_SIZE,
+      inZone: true,
+    };
+  }
+  // Fallback: very gentle ambient drift
+  return { vx: 0, vy: 0, inZone: true };
+}
+
+// ============================================================
+// PSEUDO-HAPTIC CURSOR
+// ============================================================
+let mouseX = 0, mouseY = 0;
+let prevMouseX = 0, prevMouseY = 0;
+let mouseInited = false;
+let cursorX = 0, cursorY = 0;
+let gain = 0.3;
+let effectEnabled = true;
+let showTrail = false;
+let showDispLine = true;
+let showFlowField = false;
+let cursorTrail = [];
+
+document.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (!mouseInited) {
+    prevMouseX = mouseX;
+    prevMouseY = mouseY;
+    cursorX = mouseX;
+    cursorY = mouseY;
+    mouseInited = true;
+  }
+});
+
+function updateCursor(dt, time) {
+  const dmx = mouseX - prevMouseX;
+  const dmy = mouseY - prevMouseY;
+  prevMouseX = mouseX;
+  prevMouseY = mouseY;
+
+  if (!effectEnabled) {
+    cursorX = mouseX;
+    cursorY = mouseY;
+    return;
+  }
+
+  const vel = getFireflyVelocityAt(cursorX, cursorY);
+
+  if (vel.inZone) {
+    cursorX += dmx + vel.vx * gain * dt * 30;
+    cursorY += dmy + vel.vy * gain * dt * 30;
+  } else {
+    cursorX += dmx;
+    cursorY += dmy;
+  }
+
+  if (showTrail) {
+    cursorTrail.push({ x: cursorX, y: cursorY, t: 1.0 });
+    if (cursorTrail.length > 30) cursorTrail.shift();
+  }
+}
+
+function drawCursorTrail() {
+  if (!showTrail) return;
+  for (let i = 0; i < cursorTrail.length; i++) {
+    const p = cursorTrail[i];
+    p.t -= 0.03;
+    if (p.t <= 0) { cursorTrail.splice(i, 1); i--; continue; }
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3 * p.t, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(102,136,68,${p.t * 0.5})`;
+    ctx.fill();
+  }
+}
+
+// ============================================================
+// DISPLACEMENT VISUALIZATION
+// ============================================================
+function drawDisplacementLine() {
+  const dx = cursorX - mouseX;
+  const dy = cursorY - mouseY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist > 1 && effectEnabled && showDispLine) {
+    ctx.beginPath();
+    ctx.moveTo(mouseX, mouseY);
+    ctx.lineTo(cursorX, cursorY);
+    ctx.strokeStyle = 'rgba(255,100,100,0.4)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, 3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,100,100,0.5)';
+    ctx.fill();
+  }
+
+  document.getElementById('disp-value').textContent = dist.toFixed(1) + ' px';
+}
+
+// ============================================================
+// VELOCITY FIELD VISUALIZATION
+// ============================================================
+function drawVelocityField() {
+  if (!showFlowField) return;
+
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+  const zoneLeft   = ox;
+  const zoneRight  = ox + COLS * PIXEL_SIZE;
+  const zoneTop    = oy + CANOPY_TOP * PIXEL_SIZE;
+  const zoneBottom = oy + GROUND_Y * PIXEL_SIZE;
+
+  const step = 5 * PIXEL_SIZE;
+  const arrowScale = 8;
+  const maxArrowLen = step * 0.9;
+
+  ctx.save();
+  for (let y = zoneTop + step; y <= zoneBottom - step; y += step) {
+    for (let x = zoneLeft + step; x <= zoneRight - step; x += step) {
+      const v = getFireflyVelocityAt(x, y);
+      if (!v.inZone) continue;
+
+      const mag = Math.sqrt(v.vx * v.vx + v.vy * v.vy);
+      if (mag < 0.01) continue;
+
+      let len = mag * arrowScale;
+      if (len > maxArrowLen) len = maxArrowLen;
+
+      const nx = v.vx / mag;
+      const ny = v.vy / mag;
+
+      const tx = x + nx * len;
+      const ty = y + ny * len;
+
+      const normMag = Math.min(mag / (3 * PIXEL_SIZE), 1);
+      const hue = 80 + (1 - normMag) * 40;
+      const alpha = 0.3 + normMag * 0.4;
+
+      ctx.strokeStyle = `hsla(${hue}, 90%, 50%, ${alpha})`;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.lineWidth = 1.5;
+
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+
+      const headLen = Math.max(3, len * 0.3);
+      const angle = Math.atan2(ny, nx);
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(tx - headLen * Math.cos(angle - 0.4), ty - headLen * Math.sin(angle - 0.4));
+      ctx.lineTo(tx - headLen * Math.cos(angle + 0.4), ty - headLen * Math.sin(angle + 0.4));
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+// ============================================================
+// ANIMATED AMBIENT EFFECTS (atmospheric fog, lantern, shimmer)
+// ============================================================
+function drawAmbientEffects(time) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+
+  // --- Subtle twinkling stars (only the few visible through canopy gaps) ---
+  for (let i = 0; i < 10; i++) {
+    const sx = (i * 37 + 13) % COLS;
+    const sy = (i * 23 + 7) % (GROUND_Y - 10);
+    const twinkle = 0.3 + 0.7 * Math.abs(Math.sin(time * (0.3 + i * 0.07) + i * 1.7));
+    if (twinkle > 0.75) {
+      ctx.fillStyle = `rgba(120, 140, 170, ${twinkle * 0.15})`;
+      ctx.fillRect(ox + sx * PIXEL_SIZE, oy + sy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+    }
+  }
+
+  // --- Ground fog: multiple layers drifting horizontally ---
+  const fogLayers = [
+    { y: GROUND_Y - 5, alpha: 0.025, speed: 0.08, scale: 0.03, height: 3 },
+    { y: GROUND_Y - 2, alpha: 0.04, speed: -0.06, scale: 0.04, height: 4 },
+    { y: GROUND_Y + 2, alpha: 0.05, speed: 0.04, scale: 0.05, height: 5 },
+    { y: GROUND_Y + 6, alpha: 0.03, speed: -0.03, scale: 0.06, height: 3 },
+  ];
+
+  for (const fog of fogLayers) {
+    for (let x = 0; x < COLS; x += 1) {
+      const drift = time * fog.speed * COLS;
+      const noiseX = (x + drift) * fog.scale;
+      // Perlin-like: layered sines
+      const density =
+        0.5 + 0.3 * Math.sin(noiseX * 2.1 + time * 0.15) +
+        0.2 * Math.sin(noiseX * 4.3 - time * 0.22) +
+        0.1 * Math.sin(noiseX * 7.7 + time * 0.08);
+
+      if (density > 0.55) {
+        const fogAlpha = (density - 0.55) * fog.alpha * 4;
+        for (let dy = 0; dy < fog.height; dy++) {
+          const gy = fog.y + dy;
+          if (gy >= 0 && gy < ROWS) {
+            const yFade = 1 - Math.abs(dy - fog.height / 2) / (fog.height / 2);
+            ctx.fillStyle = `rgba(80, 90, 80, ${fogAlpha * yFade})`;
+            ctx.fillRect(ox + x * PIXEL_SIZE, oy + gy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+          }
+        }
+      }
+    }
+  }
+
+  // --- Mid-air mist wisps (higher up, very faint) ---
+  for (let i = 0; i < 3; i++) {
+    const mistBaseY = 40 + i * 15;
+    const mistSpeed = 0.02 + i * 0.01;
+    for (let x = 0; x < COLS; x += 2) {
+      const drift = time * mistSpeed * COLS * (i % 2 === 0 ? 1 : -1);
+      const noiseX = (x + drift) * 0.02;
+      const density = 0.5 + 0.5 * Math.sin(noiseX * 3 + time * 0.1 + i);
+      if (density > 0.7) {
+        const alpha = (density - 0.7) * 0.02;
+        const gy = mistBaseY + Math.round(Math.sin(x * 0.05 + time * 0.2) * 2);
+        if (gy >= CANOPY_TOP && gy < GROUND_Y) {
+          ctx.fillStyle = `rgba(70, 80, 70, ${alpha})`;
+          ctx.fillRect(ox + x * PIXEL_SIZE, oy + gy * PIXEL_SIZE, PIXEL_SIZE * 2, PIXEL_SIZE);
+        }
+      }
+    }
+  }
+
+  // --- Stone lantern flicker (very faint warm pulse) ---
+  const toriiX = 76;
+  const pillarSpacing = 10;
+  const lean = 1;
+  const lanternX = toriiX + pillarSpacing + 6 + lean;
+  const lanternBaseY = GROUND_Y;
+  const lanternGlowY = lanternBaseY - 4;
+
+  // Flicker: multiple overlapping sine waves for organic feel
+  const flicker =
+    0.3 +
+    0.25 * Math.sin(time * 1.7) +
+    0.15 * Math.sin(time * 3.3 + 0.7) +
+    0.1 * Math.sin(time * 7.1 + 2.1) +
+    0.05 * Math.sin(time * 13.3 + 4.2);
+
+  const flickerAlpha = Math.max(0.05, Math.min(0.35, flicker));
+
+  // Inner glow
+  const glowR = PIXEL_SIZE * 3 * (0.8 + flicker * 0.4);
+  const lanternPx = ox + lanternX * PIXEL_SIZE + PIXEL_SIZE / 2;
+  const lanternPy = oy + lanternGlowY * PIXEL_SIZE + PIXEL_SIZE / 2;
+
+  const lanternGrad = ctx.createRadialGradient(lanternPx, lanternPy, 0, lanternPx, lanternPy, glowR);
+  lanternGrad.addColorStop(0, `rgba(180, 140, 60, ${flickerAlpha})`);
+  lanternGrad.addColorStop(0.3, `rgba(150, 100, 40, ${flickerAlpha * 0.5})`);
+  lanternGrad.addColorStop(0.6, `rgba(120, 80, 30, ${flickerAlpha * 0.15})`);
+  lanternGrad.addColorStop(1, `rgba(100, 60, 20, 0)`);
+  ctx.fillStyle = lanternGrad;
+  ctx.fillRect(lanternPx - glowR, lanternPy - glowR, glowR * 2, glowR * 2);
+
+  // --- Shimenawa rope sway (very faint wind animation) ---
+  const nukiY = (GROUND_Y - 1 - 22) + 4;
+  const ropeY = nukiY + 1;
+  // Redraw rope with slight animated sway
+  for (let dx = -pillarSpacing + 2; dx <= pillarSpacing - 2 + lean; dx++) {
+    const gx = toriiX + dx;
+    const staticSag = Math.sin((dx + pillarSpacing) / (pillarSpacing * 2) * Math.PI) * 3;
+    const windSway = Math.sin(time * 0.5 + dx * 0.15) * 0.3;
+    const sag = Math.floor(staticSag + windSway);
+    const gy = ropeY + sag;
+    if (gx >= 0 && gx < COLS && gy >= 0 && gy < ROWS) {
+      ctx.fillStyle = `rgba(34, 32, 26, 0.6)`;
+      ctx.fillRect(ox + gx * PIXEL_SIZE, oy + gy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+    }
+  }
+
+  // Animated shide (paper streamers) gentle sway
+  const shidePositions = [toriiX - 5, toriiX - 1, toriiX + 3, toriiX + 7];
+  for (const sx of shidePositions) {
+    const staticSag = Math.sin((sx - toriiX + pillarSpacing) / (pillarSpacing * 2) * Math.PI) * 3;
+    const windSway = Math.sin(time * 0.7 + sx * 0.2) * 0.5;
+    for (let dy = 0; dy < 3; dy++) {
+      const gy = ropeY + Math.floor(staticSag) + dy + 1;
+      const shideSway = Math.round(Math.sin(time * 0.6 + dy * 0.5 + sx) * 0.4);
+      const gx = sx + shideSway;
+      if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+        const a = dy === 0 ? 0.25 : 0.15;
+        ctx.fillStyle = `rgba(26, 26, 24, ${a})`;
+        ctx.fillRect(ox + gx * PIXEL_SIZE, oy + gy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+      }
+    }
+  }
+
+  // --- Pond shimmer (very subtle) ---
+  const pondCx = 115;
+  const pondCy = GROUND_Y + 10;
+  for (let dx = -6; dx <= 6; dx++) {
+    const shimmer = Math.sin(time * 0.4 + dx * 0.5) * 0.5 + 0.5;
+    if (shimmer > 0.75) {
+      const alpha = (shimmer - 0.75) * 0.06;
+      ctx.fillStyle = `rgba(80, 90, 120, ${alpha})`;
+      ctx.fillRect(
+        ox + (pondCx + dx) * PIXEL_SIZE,
+        oy + (pondCy + Math.round(Math.sin(time * 0.3 + dx))) * PIXEL_SIZE,
+        PIXEL_SIZE, PIXEL_SIZE
+      );
+    }
+  }
+}
+
+// ============================================================
+// VIGNETTE OVERLAY (heavy, claustrophobic)
+// ============================================================
+function drawVignette() {
+  const cx = W / 2;
+  const cy = H / 2;
+  const maxR = Math.sqrt(cx * cx + cy * cy);
+
+  // Heavy radial vignette
+  const gradient = ctx.createRadialGradient(cx, cy, maxR * 0.25, cx, cy, maxR * 0.85);
+  gradient.addColorStop(0, 'rgba(3, 4, 8, 0)');
+  gradient.addColorStop(0.3, 'rgba(3, 4, 8, 0.1)');
+  gradient.addColorStop(0.6, 'rgba(3, 4, 8, 0.35)');
+  gradient.addColorStop(0.8, 'rgba(3, 4, 8, 0.65)');
+  gradient.addColorStop(1, 'rgba(3, 4, 8, 0.9)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, W, H);
+
+  // Additional darkening at corners
+  const cornerGrad = ctx.createRadialGradient(cx, cy, maxR * 0.4, cx, cy, maxR);
+  cornerGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  cornerGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
+  cornerGrad.addColorStop(1, 'rgba(0, 0, 0, 0.4)');
+  ctx.fillStyle = cornerGrad;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ============================================================
+// UI CONTROLS
+// ============================================================
+document.getElementById('gain-slider').addEventListener('input', function() {
+  gain = parseFloat(this.value);
+  document.getElementById('gain-val').textContent = gain.toFixed(1);
+});
+document.getElementById('wave-slider').addEventListener('input', function() {
+  fireflyActivity = parseFloat(this.value);
+  document.getElementById('wave-val').textContent = fireflyActivity.toFixed(1);
+});
+document.getElementById('count-slider').addEventListener('input', function() {
+  fireflyCount = parseInt(this.value);
+  document.getElementById('count-val').textContent = fireflyCount;
+});
+document.getElementById('toggle-effect').addEventListener('change', function() {
+  effectEnabled = this.checked;
+});
+document.getElementById('toggle-trail').addEventListener('change', function() {
+  showTrail = this.checked;
+  if (!showTrail) cursorTrail = [];
+});
+document.getElementById('toggle-displine').addEventListener('change', function() {
+  showDispLine = this.checked;
+});
+document.getElementById('toggle-flowfield').addEventListener('change', function() {
+  showFlowField = this.checked;
+});
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+let lastTime = 0;
+
+function loop(timestamp) {
+  const time = timestamp / 1000;
+  const dt = Math.min(time - lastTime, 0.05);
+  lastTime = time;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(sceneCanvas, 0, 0);
+
+  currentTime = time;
+  drawAmbientEffects(time);
+  updateFireflies(dt, time);
+  drawFireflies(time);
+  drawVelocityField();
+  drawVignette();
+  updateCursor(dt, time);
+  drawDisplacementLine();
+  drawCursorTrail();
+
+  cursorEl.style.left = (cursorX - 2) + 'px';
+  cursorEl.style.top = (cursorY - 2) + 'px';
+
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', () => {
+  resize();
+  buildScene();
+  initFireflies();
+});
+
+buildScene();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
