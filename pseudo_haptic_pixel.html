@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pseudo-Haptic Pixel Art - Coffee Steam</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: none;
+  }
+  #main-canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    cursor: none;
+  }
+  #custom-cursor {
+    position: fixed;
+    pointer-events: none;
+    z-index: 1000;
+    width: 16px;
+    height: 24px;
+    transition: none;
+  }
+  #cursor-arrow { position: absolute; top: 0; left: 0; }
+  #controls {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    background: rgba(20, 20, 40, 0.92);
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 13px;
+    line-height: 1.7;
+    max-width: 310px;
+    z-index: 500;
+  }
+  #controls h3 {
+    font-size: 14px;
+    margin-bottom: 8px;
+    color: #ffcc66;
+    border-bottom: 1px solid #444;
+    padding-bottom: 4px;
+  }
+  #controls label {
+    display: flex; align-items: center; gap: 8px; margin: 6px 0;
+  }
+  #controls input[type="range"] { width: 120px; accent-color: #ffcc66; }
+  #controls .val { color: #ffcc66; min-width: 32px; text-align: right; }
+  .info-badge {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    background: rgba(20, 20, 40, 0.88);
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 12px;
+    line-height: 1.6;
+    z-index: 500;
+    max-width: 400px;
+  }
+  .info-badge .title { color: #ffcc66; font-weight: bold; }
+  .info-badge .subtle { color: #888; }
+  #displacement-indicator {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    background: rgba(20, 20, 40, 0.88);
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 13px;
+    z-index: 500;
+  }
+  #displacement-indicator .label { color: #888; }
+  #displacement-indicator .value { color: #ff6666; font-weight: bold; }
+  .toggle-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .toggle-row input[type="checkbox"] { accent-color: #ffcc66; }
+</style>
+</head>
+<body>
+
+<canvas id="main-canvas"></canvas>
+
+<div id="custom-cursor">
+  <svg id="cursor-arrow" width="16" height="24" viewBox="0 0 16 24">
+    <polygon points="1,1 1,19 5.5,15 9,22 12,20.5 8,14 14,12"
+             fill="white" stroke="#333" stroke-width="1.2"/>
+  </svg>
+</div>
+
+<div id="controls">
+  <h3>Parameters</h3>
+  <label>
+    Gain (C/D ratio)
+    <input type="range" id="gain-slider" min="0" max="3" step="0.1" value="0.3">
+    <span class="val" id="gain-val">0.3</span>
+  </label>
+  <label>
+    Steam intensity
+    <input type="range" id="steam-slider" min="0.2" max="2" step="0.1" value="1.0">
+    <span class="val" id="steam-val">1.0</span>
+  </label>
+  <label>
+    Steam particle count
+    <input type="range" id="count-slider" min="10" max="80" step="5" value="35">
+    <span class="val" id="count-val">35</span>
+  </label>
+  <div class="toggle-row">
+    <input type="checkbox" id="toggle-effect" checked>
+    <label for="toggle-effect">Enable pseudo-haptic effect</label>
+  </div>
+  <div class="toggle-row">
+    <input type="checkbox" id="toggle-trail">
+    <label for="toggle-trail">Show cursor trail</label>
+  </div>
+  <div class="toggle-row">
+    <input type="checkbox" id="toggle-displine" checked>
+    <label for="toggle-displine">Show displacement line</label>
+  </div>
+  <div class="toggle-row">
+    <input type="checkbox" id="toggle-flowfield">
+    <label for="toggle-flowfield">Show velocity field</label>
+  </div>
+</div>
+
+<div id="displacement-indicator">
+  <span class="label">Cursor displacement: </span>
+  <span class="value" id="disp-value">0.0 px</span>
+</div>
+
+<div class="info-badge">
+  <div class="title">Pseudo-Haptic Pixel Art Demo</div>
+  <div>コーヒーの湯気の上にカーソルを置くと、<br>
+  湯気の動きに合わせてカーソルが揺れ・上昇します。</div>
+  <div class="subtle">パーティクルシステムで湯気を生成し、視覚的カーソル変位で疑似力覚を提示</div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const PIXEL_SIZE = 6;
+const COLS = 160;
+const ROWS = 120;
+
+const canvas = document.getElementById('main-canvas');
+const ctx = canvas.getContext('2d');
+const cursorEl = document.getElementById('custom-cursor');
+
+let W, H;
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ============================================================
+// PALETTE
+// ============================================================
+const PAL = {
+  bg:        '#1a1a2e',
+  table:     '#5c3d2e',
+  tableLit:  '#7a5540',
+  tableDk:   '#3e2518',
+  cup:       '#f5f0e8',
+  cupShade:  '#d4cfc5',
+  cupDark:   '#b0a898',
+  coffee:    '#3e1f0d',
+  coffeeLit: '#5a2e14',
+  saucer:    '#e8e0d4',
+  saucerDk:  '#c8bfb0',
+  wall:      '#16213e',
+  wallLit:   '#1a2744',
+  window:    '#0f3460',
+  windowLit: '#1a4a80',
+  frame:     '#5c4033',
+};
+
+// ============================================================
+// PIXEL ART SCENE
+// ============================================================
+const sceneCanvas = document.createElement('canvas');
+const sceneCtx = sceneCanvas.getContext('2d');
+
+function drawPixel(sctx, gx, gy, color) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+  sctx.fillStyle = color;
+  sctx.fillRect(ox + gx * PIXEL_SIZE, oy + gy * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+}
+
+function drawRect(sctx, gx, gy, gw, gh, color) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+  sctx.fillStyle = color;
+  sctx.fillRect(ox + gx * PIXEL_SIZE, oy + gy * PIXEL_SIZE, gw * PIXEL_SIZE, gh * PIXEL_SIZE);
+}
+
+function buildScene() {
+  sceneCanvas.width = W;
+  sceneCanvas.height = H;
+  const s = sceneCtx;
+  drawRect(s, 0, 0, COLS, ROWS, PAL.wall);
+  for (let y = 0; y < ROWS; y++) {
+    const t = y / ROWS;
+    const c = Math.floor(22 + t * 8);
+    drawRect(s, 0, y, COLS, 1, `rgb(${c},${c+12},${c+40})`);
+  }
+  drawRect(s, 20, 10, 40, 30, PAL.frame);
+  drawRect(s, 22, 12, 36, 26, PAL.window);
+  drawRect(s, 22, 12, 17, 12, PAL.windowLit);
+  drawRect(s, 41, 12, 17, 12, PAL.windowLit);
+  drawRect(s, 22, 26, 17, 12, PAL.window);
+  drawRect(s, 41, 26, 17, 12, PAL.window);
+  drawRect(s, 39, 12, 2, 26, PAL.frame);
+  drawRect(s, 22, 24, 36, 2, PAL.frame);
+  const tableY = 75;
+  drawRect(s, 0, tableY, COLS, 4, PAL.tableLit);
+  drawRect(s, 0, tableY + 4, COLS, ROWS - tableY - 4, PAL.table);
+  drawRect(s, 0, tableY, COLS, 1, PAL.tableLit);
+  drawRect(s, 0, tableY+1, COLS, 1, PAL.tableDk);
+  const cupCx = 80;
+  const saucerY = tableY - 3;
+  drawRect(s, cupCx - 16, saucerY, 32, 3, PAL.saucer);
+  drawRect(s, cupCx - 18, saucerY + 1, 36, 2, PAL.saucer);
+  drawRect(s, cupCx - 18, saucerY + 2, 36, 1, PAL.saucerDk);
+  const cupTop = saucerY - 18;
+  const cupW = 20;
+  drawRect(s, cupCx - cupW/2, cupTop, cupW, 18, PAL.cup);
+  drawRect(s, cupCx + cupW/2 - 3, cupTop, 3, 18, PAL.cupShade);
+  drawRect(s, cupCx + cupW/2 - 1, cupTop + 1, 1, 16, PAL.cupDark);
+  drawRect(s, cupCx - cupW/2, cupTop, 1, 18, PAL.cupShade);
+  drawRect(s, cupCx - cupW/2 - 1, cupTop, cupW + 2, 2, PAL.cup);
+  drawRect(s, cupCx - cupW/2 - 1, cupTop, cupW + 2, 1, '#fff');
+  drawRect(s, cupCx - cupW/2 + 1, cupTop + 2, cupW - 2, 3, PAL.coffee);
+  drawRect(s, cupCx - cupW/2 + 1, cupTop + 2, cupW - 4, 1, PAL.coffeeLit);
+  drawRect(s, cupCx + cupW/2, cupTop + 4, 4, 10, PAL.cup);
+  drawRect(s, cupCx + cupW/2 + 4, cupTop + 6, 2, 6, PAL.cup);
+  drawRect(s, cupCx + cupW/2, cupTop + 12, 6, 2, PAL.cupShade);
+  drawRect(s, cupCx + cupW/2 + 4, cupTop + 6, 2, 6, PAL.cupShade);
+  drawRect(s, cupCx + 28, tableY - 5, 5, 5, '#f8f4ee');
+  drawRect(s, cupCx + 29, tableY - 8, 5, 5, '#f0ece4');
+  drawRect(s, cupCx + 28, tableY - 5, 5, 1, '#ddd8d0');
+  for (let i = 0; i < 15; i++) {
+    drawPixel(s, cupCx - 22 + i, tableY - 2 + Math.round(Math.sin(i*0.3)*0.8), '#c0b0a0');
+  }
+  drawRect(s, cupCx - 23, tableY - 4, 3, 3, '#c8b8a8');
+  drawPixel(s, cupCx - 24, tableY - 3, '#c8b8a8');
+}
+
+// ============================================================
+// STEAM PARTICLES
+// ============================================================
+let steamParticles = [];
+let steamCount = 35;
+let steamIntensity = 1.0;
+
+const CUP_CX = 80;
+const CUP_TOP_GRID = 75 - 3 - 18;
+
+function createSteamParticle(randomY = false) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+  return {
+    x: ox + (CUP_CX - 6 + Math.random() * 12) * PIXEL_SIZE,
+    y: randomY
+      ? oy + (CUP_TOP_GRID - Math.random() * 40) * PIXEL_SIZE
+      : oy + (CUP_TOP_GRID + Math.random() * 2) * PIXEL_SIZE,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: -0.4 - Math.random() * 0.6,
+    life: randomY ? Math.random() : 1.0,
+    size: 1 + Math.random() * 2,
+    phase: Math.random() * Math.PI * 2,
+    freq: 0.5 + Math.random() * 1.5,
+    amp: 0.3 + Math.random() * 0.7,
+  };
+}
+
+function initSteam() {
+  steamParticles = [];
+  for (let i = 0; i < steamCount; i++) steamParticles.push(createSteamParticle(true));
+}
+initSteam();
+
+function updateSteam(dt, time) {
+  while (steamParticles.length < steamCount) steamParticles.push(createSteamParticle(true));
+  while (steamParticles.length > steamCount) steamParticles.pop();
+  for (let p of steamParticles) {
+    p.life -= dt * 0.25 * steamIntensity;
+    p.x += (p.vx + Math.sin(time * p.freq + p.phase) * p.amp) * steamIntensity;
+    p.y += p.vy * steamIntensity;
+    if (p.life <= 0) Object.assign(p, createSteamParticle(false));
+  }
+}
+
+function drawSteam() {
+  for (let p of steamParticles) {
+    const alpha = Math.max(0, p.life * 0.35);
+    const sz = p.size * PIXEL_SIZE * (1 + (1 - p.life) * 0.8);
+    const snapX = Math.round(p.x / PIXEL_SIZE) * PIXEL_SIZE;
+    const snapY = Math.round(p.y / PIXEL_SIZE) * PIXEL_SIZE;
+    ctx.fillStyle = `rgba(210,215,230,${alpha})`;
+    ctx.fillRect(snapX, snapY,
+      Math.ceil(sz / PIXEL_SIZE) * PIXEL_SIZE,
+      Math.ceil(sz / PIXEL_SIZE) * PIXEL_SIZE);
+  }
+}
+
+// ============================================================
+// VELOCITY LOOKUP (particle-based)
+// ============================================================
+// currentTime is updated each frame for velocity sampling
+let currentTime = 0;
+
+function getSteamVelocityAt(sx, sy) {
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+  const zoneLeft   = ox + (CUP_CX - 22) * PIXEL_SIZE;
+  const zoneRight  = ox + (CUP_CX + 22) * PIXEL_SIZE;
+  const zoneTop    = oy + (CUP_TOP_GRID - 45) * PIXEL_SIZE;
+  const zoneBottom = oy + (CUP_TOP_GRID + 2) * PIXEL_SIZE;
+
+  if (sx < zoneLeft || sx > zoneRight || sy < zoneTop || sy > zoneBottom) {
+    return { vx: 0, vy: 0, inZone: false };
+  }
+
+  let totalVx = 0, totalVy = 0, weight = 0;
+  const radius = 15 * PIXEL_SIZE;
+  for (let p of steamParticles) {
+    const dist = Math.sqrt((p.x - sx) ** 2 + (p.y - sy) ** 2);
+    if (dist < radius) {
+      const w = (1 - dist / radius) * p.life;
+      // Use actual instantaneous velocity (matching updateSteam physics)
+      const instVx = (p.vx + Math.sin(currentTime * p.freq + p.phase) * p.amp) * steamIntensity;
+      const instVy = p.vy * steamIntensity;
+      totalVx += instVx * w;
+      totalVy += instVy * w;
+      weight += w;
+    }
+  }
+  if (weight > 0.01) {
+    return {
+      vx: (totalVx / weight) * PIXEL_SIZE,
+      vy: (totalVy / weight) * PIXEL_SIZE,
+      inZone: true,
+    };
+  }
+  return { vx: 0, vy: -0.5 * PIXEL_SIZE * steamIntensity, inZone: true };
+}
+
+// ============================================================
+// PSEUDO-HAPTIC CURSOR
+// ============================================================
+let mouseX = 0, mouseY = 0;
+let prevMouseX = 0, prevMouseY = 0;
+let mouseInited = false;
+let cursorX = 0, cursorY = 0;
+let gain = 0.3;
+let effectEnabled = true;
+let showTrail = false;
+let showDispLine = true;
+let showFlowField = false;
+let cursorTrail = [];
+
+document.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (!mouseInited) {
+    prevMouseX = mouseX;
+    prevMouseY = mouseY;
+    cursorX = mouseX;
+    cursorY = mouseY;
+    mouseInited = true;
+  }
+});
+
+function updateCursor(dt, time) {
+  const dmx = mouseX - prevMouseX;
+  const dmy = mouseY - prevMouseY;
+  prevMouseX = mouseX;
+  prevMouseY = mouseY;
+
+  if (!effectEnabled) {
+    cursorX = mouseX;
+    cursorY = mouseY;
+    return;
+  }
+
+  const steam = getSteamVelocityAt(cursorX, cursorY);
+
+  if (steam.inZone) {
+    // ポインタ移動量 + 速度場の成分
+    cursorX += dmx + steam.vx * gain * dt * 30;
+    cursorY += dmy + steam.vy * gain * dt * 30;
+  } else {
+    // ゾーン外: 変位を保持したままポインタ移動に追従
+    cursorX += dmx;
+    cursorY += dmy;
+  }
+
+  if (showTrail) {
+    cursorTrail.push({ x: cursorX, y: cursorY, t: 1.0 });
+    if (cursorTrail.length > 30) cursorTrail.shift();
+  }
+}
+
+function drawCursorTrail() {
+  if (!showTrail) return;
+  for (let i = 0; i < cursorTrail.length; i++) {
+    const p = cursorTrail[i];
+    p.t -= 0.03;
+    if (p.t <= 0) { cursorTrail.splice(i, 1); i--; continue; }
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3 * p.t, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,200,100,${p.t * 0.5})`;
+    ctx.fill();
+  }
+}
+
+// ============================================================
+// DISPLACEMENT VISUALIZATION
+// ============================================================
+function drawDisplacementLine() {
+  const dx = cursorX - mouseX;
+  const dy = cursorY - mouseY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist > 1 && effectEnabled && showDispLine) {
+    ctx.beginPath();
+    ctx.moveTo(mouseX, mouseY);
+    ctx.lineTo(cursorX, cursorY);
+    ctx.strokeStyle = 'rgba(255,100,100,0.4)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, 3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,100,100,0.5)';
+    ctx.fill();
+  }
+
+  document.getElementById('disp-value').textContent = dist.toFixed(1) + ' px';
+}
+
+// ============================================================
+// VELOCITY FIELD VISUALIZATION
+// ============================================================
+function drawVelocityField() {
+  if (!showFlowField) return;
+
+  const ox = Math.floor((W - COLS * PIXEL_SIZE) / 2);
+  const oy = Math.floor((H - ROWS * PIXEL_SIZE) / 2);
+  const zoneLeft   = ox + (CUP_CX - 22) * PIXEL_SIZE;
+  const zoneRight  = ox + (CUP_CX + 22) * PIXEL_SIZE;
+  const zoneTop    = oy + (CUP_TOP_GRID - 45) * PIXEL_SIZE;
+  const zoneBottom = oy + (CUP_TOP_GRID + 2) * PIXEL_SIZE;
+
+  const step = 4 * PIXEL_SIZE; // grid spacing
+  const arrowScale = 8;        // scale factor for arrow length
+  const maxArrowLen = step * 0.9;
+
+  ctx.save();
+  for (let y = zoneTop; y <= zoneBottom; y += step) {
+    for (let x = zoneLeft; x <= zoneRight; x += step) {
+      const v = getSteamVelocityAt(x, y);
+      if (!v.inZone) continue;
+
+      const mag = Math.sqrt(v.vx * v.vx + v.vy * v.vy);
+      if (mag < 0.01) continue;
+
+      // Arrow length proportional to magnitude, capped
+      let len = mag * arrowScale;
+      if (len > maxArrowLen) len = maxArrowLen;
+
+      // Direction
+      const nx = v.vx / mag;
+      const ny = v.vy / mag;
+
+      // Tip of arrow
+      const tx = x + nx * len;
+      const ty = y + ny * len;
+
+      // Color: map magnitude to hue (blue=slow, cyan, green, yellow, red=fast)
+      const normMag = Math.min(mag / (3 * PIXEL_SIZE), 1);
+      const hue = (1 - normMag) * 240; // 240(blue) → 0(red)
+      const alpha = 0.4 + normMag * 0.4;
+
+      ctx.strokeStyle = `hsla(${hue}, 90%, 60%, ${alpha})`;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.lineWidth = 1.5;
+
+      // Draw line
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+
+      // Draw arrowhead
+      const headLen = Math.max(3, len * 0.3);
+      const angle = Math.atan2(ny, nx);
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(tx - headLen * Math.cos(angle - 0.4), ty - headLen * Math.sin(angle - 0.4));
+      ctx.lineTo(tx - headLen * Math.cos(angle + 0.4), ty - headLen * Math.sin(angle + 0.4));
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+// ============================================================
+// UI CONTROLS
+// ============================================================
+document.getElementById('gain-slider').addEventListener('input', function() {
+  gain = parseFloat(this.value);
+  document.getElementById('gain-val').textContent = gain.toFixed(1);
+});
+document.getElementById('steam-slider').addEventListener('input', function() {
+  steamIntensity = parseFloat(this.value);
+  document.getElementById('steam-val').textContent = steamIntensity.toFixed(1);
+});
+document.getElementById('count-slider').addEventListener('input', function() {
+  steamCount = parseInt(this.value);
+  document.getElementById('count-val').textContent = steamCount;
+});
+document.getElementById('toggle-effect').addEventListener('change', function() {
+  effectEnabled = this.checked;
+});
+document.getElementById('toggle-trail').addEventListener('change', function() {
+  showTrail = this.checked;
+  if (!showTrail) cursorTrail = [];
+});
+document.getElementById('toggle-displine').addEventListener('change', function() {
+  showDispLine = this.checked;
+});
+document.getElementById('toggle-flowfield').addEventListener('change', function() {
+  showFlowField = this.checked;
+});
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+let lastTime = 0;
+
+function loop(timestamp) {
+  const time = timestamp / 1000;
+  const dt = Math.min(time - lastTime, 0.05);
+  lastTime = time;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(sceneCanvas, 0, 0);
+
+  currentTime = time;
+  updateSteam(dt, time);
+  drawSteam();
+  drawVelocityField();
+  updateCursor(dt, time);
+  drawDisplacementLine();
+  drawCursorTrail();
+
+  cursorEl.style.left = (cursorX - 2) + 'px';
+  cursorEl.style.top = (cursorY - 2) + 'px';
+
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', () => {
+  resize();
+  buildScene();
+  initSteam();
+});
+
+buildScene();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
